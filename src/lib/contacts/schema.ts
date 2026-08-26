@@ -52,6 +52,12 @@ export const contactInputSchema = z.object({
     .transform((value) => value || null)
     .nullable()
     .default(null),
+  photo: z
+    .string()
+    .trim()
+    .transform((value) => value || null)
+    .nullable()
+    .default(null),
 }) satisfies z.ZodType<ContactInput, unknown>;
 
 export type ContactFormValues = z.input<typeof contactInputSchema>;
@@ -77,7 +83,7 @@ export function zodFieldErrors(
 export interface ContactFieldSpec {
   name: keyof ContactInput;
   label: string;
-  type?: "text" | "email" | "tel" | "textarea";
+  type?: "text" | "email" | "tel" | "textarea" | "file";
   required?: boolean;
   maxLength: number;
   placeholder?: string;
@@ -97,6 +103,14 @@ export const CONTACT_FIELD_GROUPS: ContactFieldGroup[] = [
     title: "Identity",
     description: "First name, last name, and email are required.",
     fields: [
+      {
+        name: "photo",
+        label: "Photo",
+        type: "file",
+        maxLength: 10_000_000,
+        placeholder: "Upload photo",
+        wide: true,
+      },
       {
         name: "first_name",
         label: "First name",
