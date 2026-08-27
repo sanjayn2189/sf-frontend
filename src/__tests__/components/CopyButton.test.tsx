@@ -53,6 +53,31 @@ describe("CopyButton", () => {
     expect(writeTextMock).toHaveBeenCalled();
     expect(execCommandMock).toHaveBeenCalledWith("copy");
     expect(await screen.findByRole("button", { name: /copied/i })).toBeInTheDocument();
+    // Verify no leaked textarea elements
+    expect(document.querySelector("textarea")).toBeNull();
+  });
+
+  it("cleans up temporary textarea when execCommand throws an error", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
+
+    document.execCommand = jest.fn(() => {
+      throw new Error("SecurityError: The operation is insecure.");
+    });
+
+    render(<CopyButton value="ada@example.com" label="Copy email" />);
+
+    await userEvent.click(screen.getByRole("button", { name: /copy email/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /failed to copy/i })).toBeInTheDocument();
+    });
+
+    // Verify textarea is cleaned up even after throwing
+    expect(document.querySelector("textarea")).toBeNull();
   });
 
   it("falls back to execCommand when Clipboard API is unavailable", async () => {
@@ -71,6 +96,7 @@ describe("CopyButton", () => {
 
     expect(execCommandMock).toHaveBeenCalledWith("copy");
     expect(await screen.findByRole("button", { name: /copied/i })).toBeInTheDocument();
+    expect(document.querySelector("textarea")).toBeNull();
   });
 
   it("displays error state when both Clipboard API and fallback fail", async () => {
@@ -89,5 +115,6 @@ describe("CopyButton", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /failed to copy/i })).toBeInTheDocument();
     });
+    expect(document.querySelector("textarea")).toBeNull();
   });
 });

@@ -14,7 +14,11 @@ export default function CopyButton({
 
   const handleCopy = async () => {
     // 1. Try modern Clipboard API
-    if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.clipboard &&
+      typeof navigator.clipboard.writeText === "function"
+    ) {
       try {
         await navigator.clipboard.writeText(value);
         setStatus("copied");
@@ -25,10 +29,16 @@ export default function CopyButton({
       }
     }
 
-    // 2. Fallback via hidden textarea and document.execCommand
+    // 2. Fallback via hidden textarea and document.execCommand with guaranteed cleanup
+    let textarea: HTMLTextAreaElement | null = null;
+    let successful = false;
+
     try {
-      if (typeof document !== "undefined" && typeof document.execCommand === "function") {
-        const textarea = document.createElement("textarea");
+      if (
+        typeof document !== "undefined" &&
+        typeof document.execCommand === "function"
+      ) {
+        textarea = document.createElement("textarea");
         textarea.value = value;
         textarea.style.position = "fixed";
         textarea.style.left = "-9999px";
@@ -36,17 +46,20 @@ export default function CopyButton({
         textarea.setAttribute("readonly", "");
         document.body.appendChild(textarea);
         textarea.select();
-        const successful = document.execCommand("copy");
-        document.body.removeChild(textarea);
-
-        if (successful) {
-          setStatus("copied");
-          setTimeout(() => setStatus("idle"), 1500);
-          return;
-        }
+        successful = document.execCommand("copy");
       }
     } catch {
-      // Fallback failed
+      successful = false;
+    } finally {
+      if (textarea && textarea.parentNode) {
+        textarea.parentNode.removeChild(textarea);
+      }
+    }
+
+    if (successful) {
+      setStatus("copied");
+      setTimeout(() => setStatus("idle"), 1500);
+      return;
     }
 
     // 3. User-visible failure state if both methods fail
@@ -65,7 +78,13 @@ export default function CopyButton({
       type="button"
       onClick={handleCopy}
       aria-label={getAriaLabel()}
-      title={status === "error" ? "Failed to copy" : status === "copied" ? "Copied!" : label}
+      title={
+        status === "error"
+          ? "Failed to copy"
+          : status === "copied"
+            ? "Copied!"
+            : label
+      }
       className={`inline-flex h-6 w-6 items-center justify-center rounded transition-colors ${
         status === "error"
           ? "text-destructive hover:bg-destructive/10"
@@ -73,9 +92,15 @@ export default function CopyButton({
       }`}
     >
       {status === "copied" ? (
-        <Check className="h-3.5 w-3.5 text-emerald-500 animate-in zoom-in-50 duration-150" strokeWidth={2.5} />
+        <Check
+          className="h-3.5 w-3.5 text-emerald-500 animate-in zoom-in-50 duration-150"
+          strokeWidth={2.5}
+        />
       ) : status === "error" ? (
-        <AlertCircle className="h-3.5 w-3.5 text-destructive animate-in zoom-in-50 duration-150" strokeWidth={2} />
+        <AlertCircle
+          className="h-3.5 w-3.5 text-destructive animate-in zoom-in-50 duration-150"
+          strokeWidth={2}
+        />
       ) : (
         <Copy className="h-3.5 w-3.5" strokeWidth={1.75} />
       )}
