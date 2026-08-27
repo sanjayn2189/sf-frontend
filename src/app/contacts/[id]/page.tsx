@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, Pencil } from "lucide-react";
+import { ChevronLeft, ExternalLink, Pencil } from "lucide-react";
 import ContactAvatar from "@/components/contacts/ContactAvatar";
 import DeleteContactButton from "@/components/contacts/DeleteContactButton";
 import ExportVCardButton from "@/components/contacts/ExportVCardButton";
+import CopyButton from "@/components/ui/CopyButton";
 import { buttonClasses } from "@/components/ui/Button";
 import { getContact } from "@/lib/contacts/api";
 import { formatTimestamp, jobLine } from "@/lib/contacts/format";
@@ -30,9 +31,9 @@ export async function generateMetadata({
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid gap-1 border-b border-hairline px-4 py-3 last:border-b-0 sm:grid-cols-[10rem_1fr] sm:gap-4">
+    <div className="grid gap-1 border-b border-hairline px-4 py-3 last:border-b-0 sm:grid-cols-[10rem_1fr] sm:gap-4 items-center">
       <dt className="text-[13px] text-muted-foreground">{label}</dt>
-      <dd className="break-words text-sm text-foreground">
+      <dd className="break-words text-sm text-foreground flex items-center gap-2 flex-wrap">
         {children ?? <span className="text-muted-foreground/50">—</span>}
       </dd>
     </div>
@@ -93,40 +94,70 @@ export default async function ContactDetailPage({ params }: PageProps) {
           <a href={`mailto:${contact.email}`} className="text-primary hover:underline">
             {contact.email}
           </a>
+          <CopyButton value={contact.email} label="Copy email" />
         </Row>
         <Row label="Phone">
           {contact.phone ? (
-            <a href={`tel:${contact.phone}`} className="text-primary hover:underline">
-              {contact.phone}
-            </a>
+            <>
+              <a href={`tel:${contact.phone}`} className="text-primary hover:underline">
+                {contact.phone}
+              </a>
+              <CopyButton value={contact.phone} label="Copy phone" />
+            </>
           ) : null}
         </Row>
         <Row label="Company">{contact.company}</Row>
         <Row label="Job title">{contact.job_title}</Row>
         <Row label="Addresses">
           {contact.addresses && contact.addresses.length > 0 ? (
-            <div className="space-y-3">
-              {contact.addresses.map((addr, idx) => (
-                <div
-                  key={addr.id ?? idx}
-                  className="flex flex-col sm:flex-row sm:items-baseline gap-2.5 rounded-md border border-border/60 bg-muted/20 p-2.5"
-                >
-                  <span className="inline-flex items-center self-start rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary ring-1 ring-inset ring-primary/20">
-                    {addr.type}
-                  </span>
-                  <div className="text-sm text-foreground">
-                    {addr.street ? <div className="font-medium">{addr.street}</div> : null}
-                    <div className="text-muted-foreground">
-                      {[
-                        addr.city,
-                        [addr.state, addr.zip].filter(Boolean).join(" "),
-                      ]
-                        .filter(Boolean)
-                        .join(", ") || (addr.street ? "" : "—")}
+            <div className="w-full space-y-3">
+              {contact.addresses.map((addr, idx) => {
+                const query = [
+                  addr.street,
+                  addr.city,
+                  addr.state,
+                  addr.zip,
+                ]
+                  .filter(Boolean)
+                  .join(", ");
+                const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+
+                return (
+                  <div
+                    key={addr.id ?? idx}
+                    className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2.5 rounded-md border border-border/60 bg-muted/20 p-3"
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <span className="inline-flex items-center self-start rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary ring-1 ring-inset ring-primary/20">
+                        {addr.type}
+                      </span>
+                      <div className="text-sm text-foreground">
+                        {addr.street ? <div className="font-medium">{addr.street}</div> : null}
+                        <div className="text-muted-foreground">
+                          {[
+                            addr.city,
+                            [addr.state, addr.zip].filter(Boolean).join(" "),
+                          ]
+                            .filter(Boolean)
+                            .join(", ") || (addr.street ? "" : "—")}
+                        </div>
+                      </div>
                     </div>
+
+                    {query ? (
+                      <a
+                        href={mapsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-primary/80 hover:text-primary hover:underline self-end sm:self-center"
+                      >
+                        <span>View map</span>
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : null}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <span className="text-muted-foreground/50">—</span>

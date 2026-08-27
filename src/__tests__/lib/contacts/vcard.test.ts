@@ -1,4 +1,10 @@
-import { generateVCard, escapeVCardValue, downloadVCard } from "@/lib/contacts/vcard";
+import {
+  generateVCard,
+  generateMultipleVCards,
+  escapeVCardValue,
+  downloadVCard,
+  downloadMultipleVCards,
+} from "@/lib/contacts/vcard";
 import type { Contact } from "@/lib/contacts/types";
 
 const mockContact: Contact = {
@@ -62,6 +68,12 @@ describe("vcard generator", () => {
     expect(vcard).toContain("END:VCARD");
   });
 
+  it("generates multiple vCards in a single string", () => {
+    const multi = generateMultipleVCards([mockContact, mockContact]);
+    const count = (multi.match(/BEGIN:VCARD/g) || []).length;
+    expect(count).toBe(2);
+  });
+
   it("handles minimal contacts gracefully without optional fields", () => {
     const minimalContact: Contact = {
       id: 1,
@@ -104,10 +116,11 @@ describe("vcard generator", () => {
     const removeChildSpy = jest.spyOn(document.body, "removeChild");
 
     downloadVCard(mockContact);
+    downloadMultipleVCards([mockContact], "all_contacts");
 
-    expect(createObjectURLMock).toHaveBeenCalled();
-    expect(appendChildSpy).toHaveBeenCalled();
-    expect(removeChildSpy).toHaveBeenCalled();
+    expect(createObjectURLMock).toHaveBeenCalledTimes(2);
+    expect(appendChildSpy).toHaveBeenCalledTimes(2);
+    expect(removeChildSpy).toHaveBeenCalledTimes(2);
     expect(revokeObjectURLMock).toHaveBeenCalledWith("blob:http://localhost/dummy-url");
 
     appendChildSpy.mockRestore();

@@ -94,6 +94,13 @@ export function generateVCard(contact: Contact): string {
 }
 
 /**
+ * Generates a single vCard file containing multiple contacts.
+ */
+export function generateMultipleVCards(contacts: Contact[]): string {
+  return contacts.map(generateVCard).join("\r\n\r\n");
+}
+
+/**
  * Triggers a browser download of the contact's vCard file.
  */
 export function downloadVCard(contact: Contact): void {
@@ -105,6 +112,23 @@ export function downloadVCard(contact: Contact): void {
   const cleanLastName = (contact.last_name || "").trim().toLowerCase();
   const rawBaseName = `${cleanFirstName}_${cleanLastName}`.replace(/[^a-z0-9_-]+/g, "_");
   const filename = rawBaseName.replace(/^_+|_+$/g, "") || `contact_${contact.id}`;
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", `${filename}.vcf`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Triggers a browser download of all contacts in a single vCard file.
+ */
+export function downloadMultipleVCards(contacts: Contact[], filename = "contacts_export"): void {
+  const vcards = generateMultipleVCards(contacts);
+  const blob = new Blob([vcards], { type: "text/vcard;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
 
   const link = document.createElement("a");
   link.href = url;
