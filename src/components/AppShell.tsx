@@ -40,7 +40,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-40 border-b border-hairline bg-card/95 backdrop-blur">
+      <header className="sticky top-0 z-40 border-b border-hairline bg-card/95 backdrop-blur print:hidden">
         <div className="mx-auto flex h-14 max-w-5xl items-center gap-6 px-4">
           <Link href="/contacts" className="flex items-center gap-2">
             <Wordmark />

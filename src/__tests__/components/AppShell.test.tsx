@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 
 describe("AppShell", () => {
-  it("renders the branding, nav, children and version footer", () => {
+  it("renders the branding, nav, children and version footer with print:hidden", () => {
     renderShell();
 
     expect(screen.getByRole("link", { name: "SF Contacts" })).toHaveAttribute(
@@ -39,7 +39,13 @@ describe("AppShell", () => {
       "/contacts/new",
     );
     expect(screen.getByText("page body")).toBeInTheDocument();
-    expect(screen.getByRole("contentinfo")).toHaveTextContent(/^web v/);
+
+    const banner = screen.getByRole("banner");
+    expect(banner).toHaveClass("print:hidden");
+
+    const footer = screen.getByRole("contentinfo");
+    expect(footer).toHaveTextContent(/^web v/);
+    expect(footer).toHaveClass("print:hidden");
   });
 
   it("marks the current route as active", () => {
