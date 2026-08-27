@@ -343,3 +343,23 @@ describe("formDataToValues", () => {
     const { addressesError: errNeg } = await formDataToValues(formDataNeg);
     expect(errNeg).toBe("Invalid address id.");
   });
+
+  it("rejects non-positive or non-integer address IDs in addresses_json", async () => {
+    const formDataNeg = new FormData();
+    formDataNeg.set("first_name", "Grace");
+    formDataNeg.set("addresses_json", JSON.stringify([{ id: -1, type: "Home" }]));
+    const { addressesError: errNeg } = await formDataToValues(formDataNeg);
+    expect(errNeg).toBe("Invalid address id.");
+
+    const formDataZero = new FormData();
+    formDataZero.set("first_name", "Grace");
+    formDataZero.set("addresses_json", JSON.stringify([{ id: 0, type: "Home" }]));
+    const { addressesError: errZero } = await formDataToValues(formDataZero);
+    expect(errZero).toBe("Invalid address id.");
+
+    const formDataFloat = new FormData();
+    formDataFloat.set("first_name", "Grace");
+    formDataFloat.set("addresses_json", JSON.stringify([{ id: 1.5, type: "Home" }]));
+    const { addressesError: errFloat } = await formDataToValues(formDataFloat);
+    expect(errFloat).toBe("Invalid address id.");
+  });

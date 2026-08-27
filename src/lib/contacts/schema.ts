@@ -37,8 +37,8 @@ function requiredText(max: number, label: string) {
 }
 
 export const addressSchema = z.object({
-  id: z.number().optional(),
-  contact_id: z.number().optional(),
+  id: z.number().int().positive().safe().optional(),
+  contact_id: z.number().int().positive().safe().optional(),
   type: z.enum(["Home", "Work", "Other"]).default("Home"),
   street: optionalText(300, "Street"),
   city: optionalText(120, "City"),
@@ -312,7 +312,29 @@ export async function formDataToValues(
       try {
         const parsed = JSON.parse(addressesJson);
         if (Array.isArray(parsed)) {
-          addresses = parsed as Address[];
+          let validJson = true;
+          for (const item of parsed) {
+            if (typeof item !== "object" || item === null) {
+              validJson = false;
+              break;
+            }
+            if ("id" in item && item.id !== undefined && item.id !== null) {
+              if (
+                typeof item.id !== "number" ||
+                !Number.isSafeInteger(item.id) ||
+                item.id <= 0
+              ) {
+                validJson = false;
+                addressesError = "Invalid address id.";
+                break;
+              }
+            }
+          }
+          if (validJson) {
+            addresses = parsed as Address[];
+          } else if (!addressesError) {
+            addressesError = "Invalid address format.";
+          }
         } else {
           addressesError = "Invalid address format.";
         }
