@@ -49,6 +49,16 @@ describe("vcard generator", () => {
     );
   });
 
+  it("escapes phone values containing newlines and reserved characters", () => {
+    const contactWithMultilinePhone: Contact = {
+      ...mockContact,
+      phone: "+1-415-555-0100\r\next. 123;456,789",
+    };
+
+    const vcard = generateVCard(contactWithMultilinePhone);
+    expect(vcard).toContain("TEL;TYPE=CELL,VOICE:+1-415-555-0100\\next. 123\\;456\\,789");
+  });
+
   it("generates a complete vCard 3.0 string with all contact fields", () => {
     const vcard = generateVCard(mockContact);
 

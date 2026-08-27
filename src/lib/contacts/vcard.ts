@@ -37,12 +37,12 @@ export function generateVCard(contact: Contact): string {
 
   // Email
   if (contact.email) {
-    lines.push(`EMAIL;TYPE=INTERNET:${contact.email.trim()}`);
+    lines.push(`EMAIL;TYPE=INTERNET:${escapeVCardValue(contact.email.trim())}`);
   }
 
   // Phone
   if (contact.phone && contact.phone.trim()) {
-    lines.push(`TEL;TYPE=CELL,VOICE:${contact.phone.trim()}`);
+    lines.push(`TEL;TYPE=CELL,VOICE:${escapeVCardValue(contact.phone.trim())}`);
   }
 
   // Organization & Job Title
