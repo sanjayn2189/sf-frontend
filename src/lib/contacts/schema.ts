@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ContactInput } from "./types";
+import type { Address, ContactInput } from "./types";
 
 /**
  * Client/server-shared validation for the contact form.
@@ -36,6 +36,16 @@ function requiredText(max: number, label: string) {
     .max(max, `${label} must be ${max} characters or fewer`);
 }
 
+export const addressSchema = z.object({
+  id: z.number().optional(),
+  contact_id: z.number().optional(),
+  type: z.enum(["Home", "Work", "Other"]).default("Home"),
+  street: optionalText(300, "Street"),
+  city: optionalText(120, "City"),
+  state: optionalText(120, "State"),
+  zip: optionalText(20, "Postal code"),
+});
+
 export const contactInputSchema = z.object({
   first_name: requiredText(100, "First name"),
   last_name: requiredText(100, "Last name"),
@@ -49,11 +59,6 @@ export const contactInputSchema = z.object({
   phone: optionalText(40, "Phone"),
   company: optionalText(200, "Company"),
   job_title: optionalText(200, "Job title"),
-  address: optionalText(300, "Address"),
-  city: optionalText(120, "City"),
-  state: optionalText(120, "State"),
-  postal_code: optionalText(20, "Postal code"),
-  country: optionalText(120, "Country"),
   notes: z
     .string()
     .trim()
@@ -67,6 +72,7 @@ export const contactInputSchema = z.object({
     .transform((value) => value || null)
     .nullable()
     .default(null),
+  addresses: z.array(addressSchema).default([]),
 }) satisfies z.ZodType<ContactInput, unknown>;
 
 export type ContactFormValues = z.input<typeof contactInputSchema>;
@@ -74,12 +80,12 @@ export type ContactFormValues = z.input<typeof contactInputSchema>;
 /** Collapse a ZodError into one message per field, keyed by input name. */
 export function zodFieldErrors(
   error: z.ZodError,
-): Partial<Record<keyof ContactInput, string>> {
-  const fieldErrors: Partial<Record<keyof ContactInput, string>> = {};
+): Partial<Record<string, string>> {
+  const fieldErrors: Partial<Record<string, string>> = {};
   for (const issue of error.issues) {
-    const key = issue.path[0];
-    if (typeof key === "string" && !(key in fieldErrors)) {
-      fieldErrors[key as keyof ContactInput] = issue.message;
+    const key = issue.path.join(".");
+    if (key && !(key in fieldErrors)) {
+      fieldErrors[key] = issue.message;
     }
   }
   return fieldErrors;
@@ -90,7 +96,7 @@ export function zodFieldErrors(
 /* ------------------------------------------------------------------ */
 
 export interface ContactFieldSpec {
-  name: keyof ContactInput;
+  name: keyof Omit<ContactInput, "addresses">;
   label: string;
   type?: "text" | "email" | "tel" | "textarea" | "file";
   required?: boolean;
@@ -176,48 +182,6 @@ export const CONTACT_FIELD_GROUPS: ContactFieldGroup[] = [
     ],
   },
   {
-    title: "Address",
-    description: "Optional postal details.",
-    fields: [
-      {
-        name: "address",
-        label: "Street address",
-        maxLength: 300,
-        placeholder: "1 Market St, Suite 400",
-        autoComplete: "street-address",
-        wide: true,
-      },
-      {
-        name: "city",
-        label: "City",
-        maxLength: 120,
-        placeholder: "San Francisco",
-        autoComplete: "address-level2",
-      },
-      {
-        name: "state",
-        label: "State / region",
-        maxLength: 120,
-        placeholder: "CA",
-        autoComplete: "address-level1",
-      },
-      {
-        name: "postal_code",
-        label: "Postal code",
-        maxLength: 20,
-        placeholder: "94105",
-        autoComplete: "postal-code",
-      },
-      {
-        name: "country",
-        label: "Country",
-        maxLength: 120,
-        placeholder: "USA",
-        autoComplete: "country-name",
-      },
-    ],
-  },
-  {
     title: "Notes",
     description: "Anything worth remembering. No length limit.",
     fields: [
@@ -238,20 +202,45 @@ export const CONTACT_FIELDS: ContactFieldSpec[] = CONTACT_FIELD_GROUPS.flatMap(
 );
 
 export interface FormDataValuesResult {
-  values: Record<keyof ContactInput, string>;
+  values: ContactInput;
   photoError?: string;
 }
 
-/** Pull the contact fields out of a submitted form, converting direct file uploads to base64 if needed. */
+/** Pull the contact fields out of a submitted form, converting direct file uploads to base64 and parsing addresses. */
 export async function formDataToValues(
   formData: FormData,
 ): Promise<FormDataValuesResult> {
-  const values = Object.fromEntries(
+  const rawFields = Object.fromEntries(
     CONTACT_FIELDS.map((field) => {
       const val = formData.get(field.name);
       return [field.name, typeof val === "string" ? val : ""];
     }),
-  ) as Record<keyof ContactInput, string>;
+  ) as Record<keyof Omit<ContactInput, "addresses">, string>;
+
+  const addresses: Address[] = (() => {
+    const addressesJson = formData.get("addresses_json");
+    if (typeof addressesJson === "string" && addressesJson.trim()) {
+      try {
+        return JSON.parse(addressesJson) as Address[];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  })();
+
+  const values: ContactInput = {
+    ...rawFields,
+    first_name: rawFields.first_name ?? "",
+    last_name: rawFields.last_name ?? "",
+    email: rawFields.email ?? "",
+    phone: rawFields.phone ?? "",
+    company: rawFields.company ?? "",
+    job_title: rawFields.job_title ?? "",
+    notes: rawFields.notes ?? "",
+    photo: rawFields.photo ?? "",
+    addresses,
+  };
 
   let photoError: string | undefined;
 

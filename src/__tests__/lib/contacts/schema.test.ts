@@ -4,8 +4,9 @@ import {
   formDataToValues,
   zodFieldErrors,
 } from "@/lib/contacts/schema";
+import type { ContactInput } from "@/lib/contacts/types";
 
-function values(overrides: Record<string, string> = {}) {
+function values(overrides: Partial<ContactInput> = {}): ContactInput {
   return {
     first_name: "Ada",
     last_name: "Lovelace",
@@ -13,13 +14,9 @@ function values(overrides: Record<string, string> = {}) {
     phone: "",
     company: "",
     job_title: "",
-    address: "",
-    city: "",
-    state: "",
-    postal_code: "",
-    country: "",
     notes: "",
     photo: "",
+    addresses: [],
     ...overrides,
   };
 }
@@ -32,18 +29,35 @@ describe("contactInputSchema", () => {
     expect(parsed.phone).toBeNull();
     expect(parsed.notes).toBeNull();
     expect(parsed.photo).toBeNull();
+    expect(parsed.addresses).toEqual([]);
   });
 
-  it("preserves a valid base64 photo data URL", () => {
-    const photoData = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-    const parsed = contactInputSchema.parse(values({ photo: photoData }));
+  it("preserves a valid base64 photo data URL and typed addresses", () => {
+    const photoData =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const parsed = contactInputSchema.parse(
+      values({
+        photo: photoData,
+        addresses: [
+          {
+            type: "Home",
+            street: "123 Main St",
+            city: "San Francisco",
+            state: "CA",
+            zip: "94105",
+          },
+        ],
+      }),
+    );
     expect(parsed.photo).toBe(photoData);
+    expect(parsed.addresses.length).toBe(1);
+    expect(parsed.addresses[0].type).toBe("Home");
   });
 
   it("trims what the user typed", () => {
-    expect(contactInputSchema.parse(values({ company: "  Acme  " })).company).toBe(
-      "Acme",
-    );
+    expect(
+      contactInputSchema.parse(values({ company: "  Acme  " })).company,
+    ).toBe("Acme");
   });
 
   it("requires the three fields the API requires", () => {
@@ -60,18 +74,21 @@ describe("contactInputSchema", () => {
   });
 
   it("rejects a malformed email", () => {
-    const result = contactInputSchema.safeParse(values({ email: "not-an-email" }));
-    expect(zodFieldErrors(result.error!).email).toBe("Enter a valid email address");
+    const result = contactInputSchema.safeParse(
+      values({ email: "not-an-email" }),
+    );
+    expect(zodFieldErrors(result.error!).email).toBe(
+      "Enter a valid email address",
+    );
   });
 
   it("enforces the API's length limits", () => {
     const result = contactInputSchema.safeParse(
-      values({ first_name: "a".repeat(101), postal_code: "9".repeat(21) }),
+      values({ first_name: "a".repeat(101) }),
     );
 
     expect(zodFieldErrors(result.error!)).toEqual({
       first_name: "First name must be 100 characters or fewer",
-      postal_code: "Postal code must be 20 characters or fewer",
     });
   });
 });
@@ -87,9 +104,31 @@ describe("formDataToValues", () => {
 
     expect(extracted.first_name).toBe("Grace");
     expect(extracted.last_name).toBe("");
+    expect(extracted.addresses).toEqual([]);
     expect(Object.keys(extracted).sort()).toEqual(
-      CONTACT_FIELDS.map((field) => field.name).sort(),
+      [...CONTACT_FIELDS.map((field) => field.name), "addresses"].sort(),
     );
+  });
+
+  it("parses addresses_json from form data", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Ada");
+    formData.set(
+      "addresses_json",
+      JSON.stringify([
+        {
+          type: "Work",
+          street: "1 Market St",
+          city: "SF",
+          state: "CA",
+          zip: "94105",
+        },
+      ]),
+    );
+
+    const { values: extracted } = await formDataToValues(formData);
+    expect(extracted.addresses.length).toBe(1);
+    expect(extracted.addresses[0].street).toBe("1 Market St");
   });
 
   it("converts a direct file upload into a base64 data URL when no photo string is present", async () => {

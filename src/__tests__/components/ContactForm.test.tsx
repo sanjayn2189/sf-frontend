@@ -17,7 +17,7 @@ function renderForm(action: jest.Mock, contact?: ReturnType<typeof makeContact>)
 }
 
 describe("ContactForm", () => {
-  it("renders every editable field", () => {
+  it("renders every editable field and add address button", () => {
     renderForm(jest.fn());
 
     expect(screen.getByLabelText(/first name/i)).toBeRequired();
@@ -26,20 +26,34 @@ describe("ContactForm", () => {
     expect(screen.getByLabelText(/phone/i)).not.toBeRequired();
     expect(screen.getByLabelText(/notes/i).tagName).toBe("TEXTAREA");
     expect(screen.getByLabelText(/^photo/i, { selector: "input" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add address/i })).toBeInTheDocument();
   });
 
-  it("prefills from an existing contact including photo", () => {
+  it("prefills from an existing contact including photo and addresses", () => {
     const existingPhoto = "data:image/png;base64,samplephoto";
-    renderForm(jest.fn(), makeContact({ photo: existingPhoto }));
+    renderForm(
+      jest.fn(),
+      makeContact({
+        photo: existingPhoto,
+        addresses: [
+          {
+            type: "Work",
+            street: "1 Market St, Suite 400",
+            city: "San Francisco",
+            state: "CA",
+            zip: "94105",
+          },
+        ],
+      }),
+    );
 
     expect(screen.getByLabelText(/first name/i)).toHaveValue("Ada");
     expect(screen.getByLabelText(/^email/i)).toHaveValue("ada@example.com");
-    // Nulls become empty inputs rather than the string "null".
-    expect(screen.getByLabelText(/street address/i)).toHaveValue("");
     expect(screen.getByAltText(/contact avatar preview/i)).toHaveAttribute("src", existingPhoto);
+    expect(screen.getByDisplayValue("1 Market St, Suite 400")).toBeInTheDocument();
   });
 
-  it("submits the entered values to the action", async () => {
+  it("allows dynamically adding and filling an address", async () => {
     const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
       async () => ({ status: "idle" }),
     );
@@ -48,13 +62,22 @@ describe("ContactForm", () => {
     await userEvent.type(screen.getByLabelText(/first name/i), "Grace");
     await userEvent.type(screen.getByLabelText(/last name/i), "Hopper");
     await userEvent.type(screen.getByLabelText(/^email/i), "grace@example.com");
-    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
 
+    // Add address
+    await userEvent.click(screen.getByRole("button", { name: /add address/i }));
+
+    const streetInput = screen.getByPlaceholderText(/1 market st/i);
+    await userEvent.type(streetInput, "Pentagon Room 3E");
+
+    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
     await waitFor(() => expect(action).toHaveBeenCalled());
 
     const formData = action.mock.calls[0][1];
-    expect(formData.get("first_name")).toBe("Grace");
-    expect(formData.get("email")).toBe("grace@example.com");
+    const addressesJson = formData.get("addresses_json") as string;
+    const parsed = JSON.parse(addressesJson);
+    expect(parsed.length).toBe(1);
+    expect(parsed[0].street).toBe("Pentagon Room 3E");
+    expect(parsed[0].type).toBe("Home");
   });
 
   it("preserves existing photo in PUT submit payload when editing name/email", async () => {
@@ -62,7 +85,21 @@ describe("ContactForm", () => {
       async () => ({ status: "idle" }),
     );
     const existingPhoto = "data:image/png;base64,preservedPhoto";
-    renderForm(action, makeContact({ photo: existingPhoto }));
+    renderForm(
+      action,
+      makeContact({
+        photo: existingPhoto,
+        addresses: [
+          {
+            type: "Work",
+            street: "1 Market St",
+            city: "San Francisco",
+            state: "CA",
+            zip: "94105",
+          },
+        ],
+      }),
+    );
 
     await userEvent.clear(screen.getByLabelText(/first name/i));
     await userEvent.type(screen.getByLabelText(/first name/i), "Augusta");
@@ -73,6 +110,8 @@ describe("ContactForm", () => {
     const formData = action.mock.calls[0][1];
     expect(formData.get("first_name")).toBe("Augusta");
     expect(formData.get("photo")).toBe(existingPhoto);
+    const addressesJson = formData.get("addresses_json") as string;
+    expect(JSON.parse(addressesJson).length).toBe(1);
   });
 
   it("allows removing an existing photo", async () => {

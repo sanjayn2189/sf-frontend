@@ -3,7 +3,7 @@
 import { useActionState, useRef, useState, type ChangeEvent } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
-import { AlertCircle, Camera, Loader2, X } from "lucide-react";
+import { AlertCircle, Camera, Loader2, Plus, Trash2, X } from "lucide-react";
 import Field from "@/components/ui/Field";
 import Button, { buttonClasses } from "@/components/ui/Button";
 import {
@@ -13,6 +13,8 @@ import {
 } from "@/lib/contacts/schema";
 import {
   EMPTY_FORM_STATE,
+  type Address,
+  type AddressType,
   type Contact,
   type ContactInput,
   type FormState,
@@ -67,9 +69,9 @@ function resizeImage(dataUrl: string, callback: (result: string) => void) {
 }
 
 /**
- * Create/edit form. The field list comes from `CONTACT_FIELD_GROUPS`, and the
- * action is a bound server action. Supports progressive enhancement with
- * direct multipart file upload before hydration or client-side downscaling when JS is active.
+ * Create/edit form. Dynamic address array and photo avatar support.
+ * Supports progressive enhancement with server-side multipart conversion
+ * and retains full PUT payload contracts.
  */
 export default function ContactForm({
   action,
@@ -86,6 +88,14 @@ export default function ContactForm({
   const [userPhoto, setUserPhoto] = useState<string | null | undefined>(undefined);
   const [photoError, setPhotoError] = useState<string | null>(null);
 
+  // Addresses state initialized from existing contact or empty array
+  const [addresses, setAddresses] = useState<Address[]>(() => {
+    if (state.values?.addresses && Array.isArray(state.values.addresses)) {
+      return state.values.addresses;
+    }
+    return contact?.addresses ?? [];
+  });
+
   const activeReadIdRef = useRef<number>(0);
   const activeReaderRef = useRef<FileReader | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -97,8 +107,12 @@ export default function ContactForm({
         ? state.values.photo || null
         : (contact?.photo ?? null);
 
-  function valueFor(name: keyof ContactInput): string {
-    return state.values?.[name] ?? (contact?.[name] as string | undefined) ?? "";
+  function valueFor(name: keyof Omit<ContactInput, "addresses">): string {
+    return (
+      (state.values?.[name] as string | undefined) ??
+      (contact?.[name] as string | undefined) ??
+      ""
+    );
   }
 
   function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
@@ -157,6 +171,29 @@ export default function ContactForm({
     }
   }
 
+  function handleAddAddress() {
+    setAddresses((prev) => [
+      ...prev,
+      { type: "Home", street: "", city: "", state: "", zip: "" },
+    ]);
+  }
+
+  function handleRemoveAddress(index: number) {
+    setAddresses((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function handleAddressChange(
+    index: number,
+    field: keyof Omit<Address, "id" | "contact_id">,
+    value: string,
+  ) {
+    setAddresses((prev) =>
+      prev.map((addr, i) =>
+        i === index ? { ...addr, [field]: value } : addr,
+      ),
+    );
+  }
+
   const effectivePhotoError = photoError ?? state.fieldErrors?.photo;
 
   return (
@@ -175,8 +212,13 @@ export default function ContactForm({
         </div>
       ) : null}
 
-      {/* Hidden input to pass photo base64 string in form submission */}
+      {/* Hidden inputs to pass photo base64 and dynamic addresses array */}
       <input type="hidden" name="photo" value={activePhoto ?? ""} />
+      <input
+        type="hidden"
+        name="addresses_json"
+        value={JSON.stringify(addresses)}
+      />
 
       {CONTACT_FIELD_GROUPS.map((group) => (
         <fieldset key={group.title} className="space-y-4">
@@ -274,6 +316,162 @@ export default function ContactForm({
           </div>
         </fieldset>
       ))}
+
+      {/* Dynamic Addresses Section */}
+      <fieldset className="space-y-4">
+        <div className="flex items-center justify-between border-b border-hairline pb-2">
+          <div>
+            <h2 className="font-display text-sm font-semibold text-foreground">
+              Addresses
+            </h2>
+            <p className="text-[13px] text-muted-foreground">
+              Add multiple typed addresses (Home, Work, Other).
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={handleAddAddress}
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
+            Add Address
+          </Button>
+        </div>
+
+        {addresses.length === 0 ? (
+          <p className="text-xs italic text-muted-foreground">
+            No addresses added yet. Click &quot;Add Address&quot; above to add one.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            {addresses.map((address, index) => (
+              <div
+                key={index}
+                className="relative rounded-lg border border-border/80 bg-card p-4 space-y-3 shadow-xs"
+              >
+                <div className="flex items-center justify-between gap-2 border-b border-hairline pb-2">
+                  <span className="text-xs font-semibold text-foreground">
+                    Address #{index + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveAddress(index)}
+                    aria-label={`Remove address ${index + 1}`}
+                    className="inline-flex items-center text-xs text-destructive hover:underline"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
+                    Remove
+                  </button>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-6">
+                  <div className="sm:col-span-2">
+                    <label
+                      htmlFor={`address-type-${index}`}
+                      className="mb-1 block text-[13px] font-medium text-foreground"
+                    >
+                      Type
+                    </label>
+                    <select
+                      id={`address-type-${index}`}
+                      value={address.type}
+                      onChange={(e) =>
+                        handleAddressChange(
+                          index,
+                          "type",
+                          e.target.value as AddressType,
+                        )
+                      }
+                      className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                    >
+                      <option value="Home">Home</option>
+                      <option value="Work">Work</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+
+                  <div className="sm:col-span-4">
+                    <label
+                      htmlFor={`address-street-${index}`}
+                      className="mb-1 block text-[13px] font-medium text-foreground"
+                    >
+                      Street address
+                    </label>
+                    <input
+                      id={`address-street-${index}`}
+                      type="text"
+                      placeholder="1 Market St, Suite 400"
+                      value={address.street ?? ""}
+                      onChange={(e) =>
+                        handleAddressChange(index, "street", e.target.value)
+                      }
+                      className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label
+                      htmlFor={`address-city-${index}`}
+                      className="mb-1 block text-[13px] font-medium text-foreground"
+                    >
+                      City
+                    </label>
+                    <input
+                      id={`address-city-${index}`}
+                      type="text"
+                      placeholder="San Francisco"
+                      value={address.city ?? ""}
+                      onChange={(e) =>
+                        handleAddressChange(index, "city", e.target.value)
+                      }
+                      className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label
+                      htmlFor={`address-state-${index}`}
+                      className="mb-1 block text-[13px] font-medium text-foreground"
+                    >
+                      State / region
+                    </label>
+                    <input
+                      id={`address-state-${index}`}
+                      type="text"
+                      placeholder="CA"
+                      value={address.state ?? ""}
+                      onChange={(e) =>
+                        handleAddressChange(index, "state", e.target.value)
+                      }
+                      className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label
+                      htmlFor={`address-zip-${index}`}
+                      className="mb-1 block text-[13px] font-medium text-foreground"
+                    >
+                      Postal code
+                    </label>
+                    <input
+                      id={`address-zip-${index}`}
+                      type="text"
+                      placeholder="94105"
+                      value={address.zip ?? ""}
+                      onChange={(e) =>
+                        handleAddressChange(index, "zip", e.target.value)
+                      }
+                      className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </fieldset>
 
       <div className="flex items-center gap-2 border-t border-hairline pt-4">
         <SubmitButton label={submitLabel} />
