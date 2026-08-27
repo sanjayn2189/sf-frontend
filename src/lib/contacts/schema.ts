@@ -224,25 +224,60 @@ export async function formDataToValues(
   let addressesError: string | undefined;
 
   if (addressIndices.length > 0) {
-    for (const idxStr of addressIndices) {
-      const idx = String(idxStr);
-      const typeRaw = formData.get(`address_${idx}_type`);
+    for (const idxVal of addressIndices) {
+      if (typeof idxVal !== "string") {
+        addressesError = "Invalid address index format.";
+        break;
+      }
+      const idx = idxVal.trim();
+      if (!idx) continue;
+
+      const typeVal = formData.get(`address_${idx}_type`);
+      if (typeVal !== null && typeof typeVal !== "string") {
+        addressesError = "Invalid address type format.";
+        break;
+      }
       const type: AddressType =
-        typeRaw === "Work" || typeRaw === "Other" ? typeRaw : "Home";
-      const street = (formData.get(`address_${idx}_street`) as string) || null;
-      const city = (formData.get(`address_${idx}_city`) as string) || null;
-      const state = (formData.get(`address_${idx}_state`) as string) || null;
-      const zip = (formData.get(`address_${idx}_zip`) as string) || null;
-      const idRaw = formData.get(`address_${idx}_id`);
-      const id = idRaw ? Number.parseInt(String(idRaw), 10) : undefined;
+        typeVal === "Work" || typeVal === "Other" ? typeVal : "Home";
+
+      const extractString = (field: string): string | null | false => {
+        const val = formData.get(`address_${idx}_${field}`);
+        if (val === null) return null;
+        if (typeof val !== "string") return false;
+        const trimmed = val.trim();
+        return trimmed || null;
+      };
+
+      const street = extractString("street");
+      const city = extractString("city");
+      const state = extractString("state");
+      const zip = extractString("zip");
+
+      if (street === false || city === false || state === false || zip === false) {
+        addressesError = "Invalid address field value.";
+        break;
+      }
+
+      const idVal = formData.get(`address_${idx}_id`);
+      let id: number | undefined;
+      if (idVal !== null) {
+        if (typeof idVal !== "string") {
+          addressesError = "Invalid address id format.";
+          break;
+        }
+        const parsed = Number.parseInt(idVal.trim(), 10);
+        if (!Number.isNaN(parsed)) {
+          id = parsed;
+        }
+      }
 
       addresses.push({
-        ...(id && !Number.isNaN(id) ? { id } : {}),
+        ...(id !== undefined ? { id } : {}),
         type,
-        street: street ? street.trim() : null,
-        city: city ? city.trim() : null,
-        state: state ? state.trim() : null,
-        zip: zip ? zip.trim() : null,
+        street,
+        city,
+        state,
+        zip,
       });
     }
   } else {

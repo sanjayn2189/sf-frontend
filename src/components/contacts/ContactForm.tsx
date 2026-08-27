@@ -71,7 +71,7 @@ function resizeImage(dataUrl: string, callback: (result: string) => void) {
 /**
  * Create/edit form with dynamic address array and photo avatar support.
  * Supports progressive enhancement with indexed native form controls
- * and retains full PUT payload contracts.
+ * and displays nested field validation errors and schema length limits.
  */
 export default function ContactForm({
   action,
@@ -113,6 +113,10 @@ export default function ContactForm({
       (contact?.[name] as string | undefined) ??
       ""
     );
+  }
+
+  function addressError(index: number, field: string): string | undefined {
+    return state.fieldErrors?.[`addresses.${index}.${field}`];
   }
 
   function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
@@ -339,6 +343,12 @@ export default function ContactForm({
           </Button>
         </div>
 
+        {state.fieldErrors?.addresses ? (
+          <p role="alert" className="text-[13px] text-destructive">
+            {state.fieldErrors.addresses}
+          </p>
+        ) : null}
+
         {addresses.length === 0 ? (
           <p className="text-xs italic text-muted-foreground">
             No addresses added yet. Click &quot;Add Address&quot; above to add one.
@@ -394,12 +404,27 @@ export default function ContactForm({
                           e.target.value as AddressType,
                         )
                       }
+                      aria-invalid={Boolean(addressError(index, "type"))}
+                      aria-describedby={
+                        addressError(index, "type")
+                          ? `address-type-${index}-error`
+                          : undefined
+                      }
                       className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
                     >
                       <option value="Home">Home</option>
                       <option value="Work">Work</option>
                       <option value="Other">Other</option>
                     </select>
+                    {addressError(index, "type") ? (
+                      <p
+                        id={`address-type-${index}-error`}
+                        role="alert"
+                        className="mt-1 text-[13px] text-destructive"
+                      >
+                        {addressError(index, "type")}
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="sm:col-span-4">
@@ -413,13 +438,29 @@ export default function ContactForm({
                       id={`address-street-${index}`}
                       name={`address_${index}_street`}
                       type="text"
+                      maxLength={300}
                       placeholder="1 Market St, Suite 400"
                       value={address.street ?? ""}
                       onChange={(e) =>
                         handleAddressChange(index, "street", e.target.value)
                       }
+                      aria-invalid={Boolean(addressError(index, "street"))}
+                      aria-describedby={
+                        addressError(index, "street")
+                          ? `address-street-${index}-error`
+                          : undefined
+                      }
                       className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
                     />
+                    {addressError(index, "street") ? (
+                      <p
+                        id={`address-street-${index}-error`}
+                        role="alert"
+                        className="mt-1 text-[13px] text-destructive"
+                      >
+                        {addressError(index, "street")}
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="sm:col-span-2">
@@ -433,13 +474,29 @@ export default function ContactForm({
                       id={`address-city-${index}`}
                       name={`address_${index}_city`}
                       type="text"
+                      maxLength={120}
                       placeholder="San Francisco"
                       value={address.city ?? ""}
                       onChange={(e) =>
                         handleAddressChange(index, "city", e.target.value)
                       }
+                      aria-invalid={Boolean(addressError(index, "city"))}
+                      aria-describedby={
+                        addressError(index, "city")
+                          ? `address-city-${index}-error`
+                          : undefined
+                      }
                       className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
                     />
+                    {addressError(index, "city") ? (
+                      <p
+                        id={`address-city-${index}-error`}
+                        role="alert"
+                        className="mt-1 text-[13px] text-destructive"
+                      >
+                        {addressError(index, "city")}
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="sm:col-span-2">
@@ -453,13 +510,29 @@ export default function ContactForm({
                       id={`address-state-${index}`}
                       name={`address_${index}_state`}
                       type="text"
+                      maxLength={120}
                       placeholder="CA"
                       value={address.state ?? ""}
                       onChange={(e) =>
                         handleAddressChange(index, "state", e.target.value)
                       }
+                      aria-invalid={Boolean(addressError(index, "state"))}
+                      aria-describedby={
+                        addressError(index, "state")
+                          ? `address-state-${index}-error`
+                          : undefined
+                      }
                       className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
                     />
+                    {addressError(index, "state") ? (
+                      <p
+                        id={`address-state-${index}-error`}
+                        role="alert"
+                        className="mt-1 text-[13px] text-destructive"
+                      >
+                        {addressError(index, "state")}
+                      </p>
+                    ) : null}
                   </div>
 
                   <div className="sm:col-span-2">
@@ -473,13 +546,29 @@ export default function ContactForm({
                       id={`address-zip-${index}`}
                       name={`address_${index}_zip`}
                       type="text"
+                      maxLength={20}
                       placeholder="94105"
                       value={address.zip ?? ""}
                       onChange={(e) =>
                         handleAddressChange(index, "zip", e.target.value)
                       }
+                      aria-invalid={Boolean(addressError(index, "zip"))}
+                      aria-describedby={
+                        addressError(index, "zip")
+                          ? `address-zip-${index}-error`
+                          : undefined
+                      }
                       className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
                     />
+                    {addressError(index, "zip") ? (
+                      <p
+                        id={`address-zip-${index}-error`}
+                        role="alert"
+                        className="mt-1 text-[13px] text-destructive"
+                      >
+                        {addressError(index, "zip")}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </div>

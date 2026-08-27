@@ -260,3 +260,33 @@ describe("formDataToValues", () => {
     expect(extracted.photo).toBe(resizedDataUrl);
   });
 });
+
+  it("handles non-string File values in indexed address controls by returning addressesError", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Grace");
+    formData.append("address_index", "0");
+
+    const mockFile = new File(["dummy"], "file.txt", { type: "text/plain" });
+    // Simulate a multipart File attached to an address field
+    formData.get = jest.fn((name: string) => {
+      if (name === "first_name") return "Grace";
+      if (name === "address_0_street") return mockFile;
+      return null;
+    });
+
+    const { addressesError } = await formDataToValues(formData);
+    expect(addressesError).toBe("Invalid address field value.");
+  });
+
+  it("handles non-string File in address_index by returning addressesError", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Grace");
+    const mockFile = new File(["dummy"], "file.txt", { type: "text/plain" });
+    formData.getAll = jest.fn((name: string) => {
+      if (name === "address_index") return [mockFile];
+      return [];
+    });
+
+    const { addressesError } = await formDataToValues(formData);
+    expect(addressesError).toBe("Invalid address index format.");
+  });

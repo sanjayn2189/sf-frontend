@@ -191,3 +191,53 @@ describe("ContactForm", () => {
     );
   });
 });
+
+  it("displays nested address validation errors and sets aria-invalid", async () => {
+    const action = jest.fn(
+      async (): Promise<FormState> => ({
+        status: "error",
+        message: "Please fix the highlighted fields.",
+        fieldErrors: {
+          "addresses.0.street": "Street must be 300 characters or fewer",
+          "addresses.0.zip": "Postal code must be 20 characters or fewer",
+        },
+        values: {
+          first_name: "Ada",
+          addresses: [
+            {
+              type: "Home",
+              street: "Too long street",
+              city: "San Francisco",
+              state: "CA",
+              zip: "123456789012345678901",
+            },
+          ],
+        },
+      }),
+    );
+    renderForm(
+      action,
+      makeContact({
+        addresses: [
+          {
+            type: "Home",
+            street: "Too long street",
+            city: "San Francisco",
+            state: "CA",
+            zip: "123456789012345678901",
+          },
+        ],
+      }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
+
+    const streetError = await screen.findByText("Street must be 300 characters or fewer");
+    expect(streetError).toBeInTheDocument();
+
+    const zipError = await screen.findByText("Postal code must be 20 characters or fewer");
+    expect(zipError).toBeInTheDocument();
+
+    expect(screen.getByPlaceholderText(/1 market st/i)).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByPlaceholderText(/94105/i)).toHaveAttribute("aria-invalid", "true");
+  });
