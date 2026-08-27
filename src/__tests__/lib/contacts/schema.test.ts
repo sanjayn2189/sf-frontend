@@ -290,3 +290,56 @@ describe("formDataToValues", () => {
     const { addressesError } = await formDataToValues(formData);
     expect(addressesError).toBe("Invalid address index format.");
   });
+
+  it("rejects blank or non-numeric address_index entries with addressesError", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Grace");
+    formData.append("address_index", "   ");
+
+    const { addressesError } = await formDataToValues(formData);
+    expect(addressesError).toBe("Invalid address index.");
+  });
+
+  it("rejects duplicate address_index entries with addressesError", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Grace");
+    formData.append("address_index", "0");
+    formData.append("address_index", "0");
+
+    const { addressesError } = await formDataToValues(formData);
+    expect(addressesError).toBe("Duplicate address index.");
+  });
+
+  it("rejects invalid address type values with addressesError instead of coercing to Home", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Grace");
+    formData.append("address_index", "0");
+    formData.set("address_0_type", "Vacation");
+
+    const { addressesError } = await formDataToValues(formData);
+    expect(addressesError).toBe("Invalid address type. Expected Home, Work, or Other.");
+  });
+
+  it("rejects non-positive or prefix-parsed address IDs with addressesError", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Grace");
+    formData.append("address_index", "0");
+    formData.set("address_0_id", "12abc");
+
+    const { addressesError } = await formDataToValues(formData);
+    expect(addressesError).toBe("Invalid address id.");
+
+    const formDataZero = new FormData();
+    formDataZero.set("first_name", "Grace");
+    formDataZero.append("address_index", "0");
+    formDataZero.set("address_0_id", "0");
+    const { addressesError: errZero } = await formDataToValues(formDataZero);
+    expect(errZero).toBe("Invalid address id.");
+
+    const formDataNeg = new FormData();
+    formDataNeg.set("first_name", "Grace");
+    formDataNeg.append("address_index", "0");
+    formDataNeg.set("address_0_id", "-5");
+    const { addressesError: errNeg } = await formDataToValues(formDataNeg);
+    expect(errNeg).toBe("Invalid address id.");
+  });

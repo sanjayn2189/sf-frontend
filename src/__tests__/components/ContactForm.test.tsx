@@ -241,3 +241,42 @@ describe("ContactForm", () => {
     expect(screen.getByPlaceholderText(/1 market st/i)).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByPlaceholderText(/94105/i)).toHaveAttribute("aria-invalid", "true");
   });
+
+  it("clears error on removed address and shifts remaining positional errors correctly", async () => {
+    const action = jest.fn(
+      async (): Promise<FormState> => ({
+        status: "error",
+        message: "Please fix the highlighted fields.",
+        fieldErrors: {
+          "addresses.0.street": "Street 0 error",
+          "addresses.1.street": "Street 1 error",
+        },
+        values: {
+          first_name: "Ada",
+        },
+      }),
+    );
+    renderForm(
+      action,
+      makeContact({
+        addresses: [
+          { type: "Home", street: "Street 0" },
+          { type: "Work", street: "Street 1" },
+        ],
+      }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
+
+    expect(await screen.findByText("Street 0 error")).toBeInTheDocument();
+    expect(screen.getByText("Street 1 error")).toBeInTheDocument();
+
+    // Remove Address #1 (index 0)
+    const removeButtons = screen.getAllByRole("button", { name: /remove/i });
+    await userEvent.click(removeButtons[0]);
+
+    // Street 0 error should be removed completely
+    expect(screen.queryByText("Street 0 error")).not.toBeInTheDocument();
+    // Street 1 error should now be on the remaining address (re-indexed to 0)
+    expect(screen.getByText("Street 1 error")).toBeInTheDocument();
+  });

@@ -224,21 +224,43 @@ export async function formDataToValues(
   let addressesError: string | undefined;
 
   if (addressIndices.length > 0) {
+    const seenIndices = new Set<string>();
+
     for (const idxVal of addressIndices) {
       if (typeof idxVal !== "string") {
         addressesError = "Invalid address index format.";
         break;
       }
       const idx = idxVal.trim();
-      if (!idx) continue;
+      if (!idx || !/^\d+$/.test(idx)) {
+        addressesError = "Invalid address index.";
+        break;
+      }
+      if (seenIndices.has(idx)) {
+        addressesError = "Duplicate address index.";
+        break;
+      }
+      seenIndices.add(idx);
 
       const typeVal = formData.get(`address_${idx}_type`);
       if (typeVal !== null && typeof typeVal !== "string") {
         addressesError = "Invalid address type format.";
         break;
       }
-      const type: AddressType =
-        typeVal === "Work" || typeVal === "Other" ? typeVal : "Home";
+
+      let type: AddressType;
+      if (typeVal === null || typeVal.trim() === "") {
+        type = "Home";
+      } else if (
+        typeVal.trim() === "Home" ||
+        typeVal.trim() === "Work" ||
+        typeVal.trim() === "Other"
+      ) {
+        type = typeVal.trim() as AddressType;
+      } else {
+        addressesError = "Invalid address type. Expected Home, Work, or Other.";
+        break;
+      }
 
       const extractString = (field: string): string | null | false => {
         const val = formData.get(`address_${idx}_${field}`);
@@ -265,9 +287,13 @@ export async function formDataToValues(
           addressesError = "Invalid address id format.";
           break;
         }
-        const parsed = Number.parseInt(idVal.trim(), 10);
-        if (!Number.isNaN(parsed)) {
-          id = parsed;
+        const trimmedId = idVal.trim();
+        if (trimmedId !== "") {
+          if (!/^[1-9]\d*$/.test(trimmedId) || !Number.isSafeInteger(Number(trimmedId))) {
+            addressesError = "Invalid address id.";
+            break;
+          }
+          id = Number(trimmedId);
         }
       }
 

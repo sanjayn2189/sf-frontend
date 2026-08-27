@@ -27,6 +27,15 @@ export type ContactFormAction = (
   formData: FormData,
 ) => Promise<FormState>;
 
+interface AddressItem extends Address {
+  _key: string;
+}
+
+let keyCounter = 0;
+function createAddressItem(addr: Address): AddressItem {
+  return { ...addr, _key: `addr_${++keyCounter}_${Date.now()}` };
+}
+
 function SubmitButton({ label }: { label: string }) {
   const { pending } = useFormStatus();
 
@@ -70,8 +79,9 @@ function resizeImage(dataUrl: string, callback: (result: string) => void) {
 
 /**
  * Create/edit form with dynamic address array and photo avatar support.
- * Supports progressive enhancement with indexed native form controls
- * and displays nested field validation errors and schema length limits.
+ * Supports progressive enhancement with indexed native form controls,
+ * displays nested validation errors, and prevents stale positional errors
+ * when modifying or removing address entries.
  */
 export default function ContactForm({
   action,
@@ -88,13 +98,23 @@ export default function ContactForm({
   const [userPhoto, setUserPhoto] = useState<string | null | undefined>(undefined);
   const [photoError, setPhotoError] = useState<string | null>(null);
 
-  // Addresses state initialized from existing contact or empty array
-  const [addresses, setAddresses] = useState<Address[]>(() => {
-    if (state.values?.addresses && Array.isArray(state.values.addresses)) {
-      return state.values.addresses;
-    }
-    return contact?.addresses ?? [];
+  // Dynamic address items with unique keys
+  const [addresses, setAddresses] = useState<AddressItem[]>(() => {
+    const initial =
+      state.values?.addresses && Array.isArray(state.values.addresses)
+        ? state.values.addresses
+        : (contact?.addresses ?? []);
+    return initial.map(createAddressItem);
   });
+
+  // Local address errors tracked and shifted on removal
+  const [addressErrors, setAddressErrors] = useState<Partial<Record<string, string>>>({});
+  const [lastState, setLastState] = useState(state);
+
+  if (state !== lastState) {
+    setLastState(state);
+    setAddressErrors(state.fieldErrors ?? {});
+  }
 
   const activeReadIdRef = useRef<number>(0);
   const activeReaderRef = useRef<FileReader | null>(null);
@@ -116,7 +136,7 @@ export default function ContactForm({
   }
 
   function addressError(index: number, field: string): string | undefined {
-    return state.fieldErrors?.[`addresses.${index}.${field}`];
+    return addressErrors[`addresses.${index}.${field}`];
   }
 
   function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
@@ -178,12 +198,34 @@ export default function ContactForm({
   function handleAddAddress() {
     setAddresses((prev) => [
       ...prev,
-      { type: "Home", street: "", city: "", state: "", zip: "" },
+      createAddressItem({ type: "Home", street: "", city: "", state: "", zip: "" }),
     ]);
   }
 
   function handleRemoveAddress(index: number) {
     setAddresses((prev) => prev.filter((_, i) => i !== index));
+
+    // Shift address error positions to prevent stale errors on neighboring addresses
+    setAddressErrors((prev) => {
+      const next: Partial<Record<string, string>> = {};
+      for (const [key, msg] of Object.entries(prev)) {
+        if (!msg) continue;
+        const match = key.match(/^addresses\.(\d+)\.(.+)$/);
+        if (match) {
+          const idx = Number.parseInt(match[1], 10);
+          const field = match[2];
+          if (idx < index) {
+            next[key] = msg;
+          } else if (idx > index) {
+            next[`addresses.${idx - 1}.${field}`] = msg;
+          }
+          // If idx === index: intentionally omitted (deleted with the removed address)
+        } else {
+          next[key] = msg;
+        }
+      }
+      return next;
+    });
   }
 
   function handleAddressChange(
@@ -196,6 +238,17 @@ export default function ContactForm({
         i === index ? { ...addr, [field]: value } : addr,
       ),
     );
+
+    // Clear error for this specific field as user edits it
+    setAddressErrors((prev) => {
+      const key = `addresses.${index}.${field}`;
+      if (key in prev) {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      return prev;
+    });
   }
 
   const effectivePhotoError = photoError ?? state.fieldErrors?.photo;
@@ -221,7 +274,17 @@ export default function ContactForm({
       <input
         type="hidden"
         name="addresses_json"
-        value={JSON.stringify(addresses)}
+        value={JSON.stringify(
+          addresses.map((item) => ({
+            ...(item.id ? { id: item.id } : {}),
+            ...(item.contact_id ? { contact_id: item.contact_id } : {}),
+            type: item.type,
+            street: item.street,
+            city: item.city,
+            state: item.state,
+            zip: item.zip,
+          })),
+        )}
       />
 
       {CONTACT_FIELD_GROUPS.map((group) => (
@@ -343,9 +406,9 @@ export default function ContactForm({
           </Button>
         </div>
 
-        {state.fieldErrors?.addresses ? (
+        {addressErrors.addresses ? (
           <p role="alert" className="text-[13px] text-destructive">
-            {state.fieldErrors.addresses}
+            {addressErrors.addresses}
           </p>
         ) : null}
 
@@ -357,7 +420,7 @@ export default function ContactForm({
           <div className="space-y-4">
             {addresses.map((address, index) => (
               <div
-                key={index}
+                key={address._key}
                 className="relative rounded-lg border border-border/80 bg-card p-4 space-y-3 shadow-xs"
               >
                 {/* Native hidden controls for indexed form submissions */}
