@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { ChevronLeft, Pencil } from "lucide-react";
 import ContactAvatar from "@/components/contacts/ContactAvatar";
 import DeleteContactButton from "@/components/contacts/DeleteContactButton";
+import ExportVCardButton from "@/components/contacts/ExportVCardButton";
 import { buttonClasses } from "@/components/ui/Button";
 import { getContact } from "@/lib/contacts/api";
 import { formatTimestamp, jobLine } from "@/lib/contacts/format";
@@ -67,7 +68,8 @@ export default async function ContactDetailPage({ params }: PageProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <ExportVCardButton contact={contact} />
           <Link
             href={`/contacts/${contact.id}/edit`}
             className={buttonClasses("secondary")}
