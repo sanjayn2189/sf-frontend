@@ -7,7 +7,7 @@ import ContactAvatar from "@/components/contacts/ContactAvatar";
 import DeleteContactButton from "@/components/contacts/DeleteContactButton";
 import { buttonClasses } from "@/components/ui/Button";
 import { getContact } from "@/lib/contacts/api";
-import { addressLine, formatTimestamp, jobLine } from "@/lib/contacts/format";
+import { formatTimestamp, jobLine } from "@/lib/contacts/format";
 
 type PageProps = { params: Promise<{ id: string }> };
 
@@ -43,7 +43,6 @@ export default async function ContactDetailPage({ params }: PageProps) {
   if (!contact) notFound();
 
   const subtitle = jobLine(contact);
-  const address = addressLine(contact);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
@@ -102,7 +101,35 @@ export default async function ContactDetailPage({ params }: PageProps) {
         </Row>
         <Row label="Company">{contact.company}</Row>
         <Row label="Job title">{contact.job_title}</Row>
-        <Row label="Address">{address}</Row>
+        <Row label="Addresses">
+          {contact.addresses && contact.addresses.length > 0 ? (
+            <div className="space-y-3">
+              {contact.addresses.map((addr, idx) => (
+                <div
+                  key={addr.id ?? idx}
+                  className="flex flex-col sm:flex-row sm:items-baseline gap-2.5 rounded-md border border-border/60 bg-muted/20 p-2.5"
+                >
+                  <span className="inline-flex items-center self-start rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary ring-1 ring-inset ring-primary/20">
+                    {addr.type}
+                  </span>
+                  <div className="text-sm text-foreground">
+                    {addr.street ? <div className="font-medium">{addr.street}</div> : null}
+                    <div className="text-muted-foreground">
+                      {[
+                        addr.city,
+                        [addr.state, addr.zip].filter(Boolean).join(" "),
+                      ]
+                        .filter(Boolean)
+                        .join(", ") || (addr.street ? "" : "—")}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <span className="text-muted-foreground/50">—</span>
+          )}
+        </Row>
         <Row label="Notes">
           {contact.notes ? (
             <span className="whitespace-pre-wrap">{contact.notes}</span>

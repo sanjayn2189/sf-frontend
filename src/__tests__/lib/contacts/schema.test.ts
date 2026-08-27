@@ -4,8 +4,9 @@ import {
   formDataToValues,
   zodFieldErrors,
 } from "@/lib/contacts/schema";
+import type { ContactInput } from "@/lib/contacts/types";
 
-function values(overrides: Record<string, string> = {}) {
+function values(overrides: Partial<ContactInput> = {}): ContactInput {
   return {
     first_name: "Ada",
     last_name: "Lovelace",
@@ -13,13 +14,9 @@ function values(overrides: Record<string, string> = {}) {
     phone: "",
     company: "",
     job_title: "",
-    address: "",
-    city: "",
-    state: "",
-    postal_code: "",
-    country: "",
     notes: "",
     photo: "",
+    addresses: [],
     ...overrides,
   };
 }
@@ -32,18 +29,35 @@ describe("contactInputSchema", () => {
     expect(parsed.phone).toBeNull();
     expect(parsed.notes).toBeNull();
     expect(parsed.photo).toBeNull();
+    expect(parsed.addresses).toEqual([]);
   });
 
-  it("preserves a valid base64 photo data URL", () => {
-    const photoData = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-    const parsed = contactInputSchema.parse(values({ photo: photoData }));
+  it("preserves a valid base64 photo data URL and typed addresses", () => {
+    const photoData =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const parsed = contactInputSchema.parse(
+      values({
+        photo: photoData,
+        addresses: [
+          {
+            type: "Home",
+            street: "123 Main St",
+            city: "San Francisco",
+            state: "CA",
+            zip: "94105",
+          },
+        ],
+      }),
+    );
     expect(parsed.photo).toBe(photoData);
+    expect(parsed.addresses.length).toBe(1);
+    expect(parsed.addresses[0].type).toBe("Home");
   });
 
   it("trims what the user typed", () => {
-    expect(contactInputSchema.parse(values({ company: "  Acme  " })).company).toBe(
-      "Acme",
-    );
+    expect(
+      contactInputSchema.parse(values({ company: "  Acme  " })).company,
+    ).toBe("Acme");
   });
 
   it("requires the three fields the API requires", () => {
@@ -60,18 +74,21 @@ describe("contactInputSchema", () => {
   });
 
   it("rejects a malformed email", () => {
-    const result = contactInputSchema.safeParse(values({ email: "not-an-email" }));
-    expect(zodFieldErrors(result.error!).email).toBe("Enter a valid email address");
+    const result = contactInputSchema.safeParse(
+      values({ email: "not-an-email" }),
+    );
+    expect(zodFieldErrors(result.error!).email).toBe(
+      "Enter a valid email address",
+    );
   });
 
   it("enforces the API's length limits", () => {
     const result = contactInputSchema.safeParse(
-      values({ first_name: "a".repeat(101), postal_code: "9".repeat(21) }),
+      values({ first_name: "a".repeat(101) }),
     );
 
     expect(zodFieldErrors(result.error!)).toEqual({
       first_name: "First name must be 100 characters or fewer",
-      postal_code: "Postal code must be 20 characters or fewer",
     });
   });
 });
@@ -87,9 +104,88 @@ describe("formDataToValues", () => {
 
     expect(extracted.first_name).toBe("Grace");
     expect(extracted.last_name).toBe("");
+    expect(extracted.addresses).toEqual([]);
     expect(Object.keys(extracted).sort()).toEqual(
-      CONTACT_FIELDS.map((field) => field.name).sort(),
+      [...CONTACT_FIELDS.map((field) => field.name), "addresses"].sort(),
     );
+  });
+
+  it("parses progressive-enhancement indexed address controls from form data", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Grace");
+    formData.set("email", "grace@example.com");
+    formData.append("address_index", "0");
+    formData.append("address_index", "1");
+
+    formData.set("address_0_type", "Work");
+    formData.set("address_0_street", "Pentagon Room 3E");
+    formData.set("address_0_city", "Arlington");
+    formData.set("address_0_state", "VA");
+    formData.set("address_0_zip", "20301");
+
+    formData.set("address_1_type", "Home");
+    formData.set("address_1_street", "100 Main St");
+    formData.set("address_1_city", "New York");
+    formData.set("address_1_state", "NY");
+    formData.set("address_1_zip", "10001");
+
+    const { values: extracted } = await formDataToValues(formData);
+    expect(extracted.addresses.length).toBe(2);
+    expect(extracted.addresses[0]).toEqual({
+      type: "Work",
+      street: "Pentagon Room 3E",
+      city: "Arlington",
+      state: "VA",
+      zip: "20301",
+    });
+    expect(extracted.addresses[1]).toEqual({
+      type: "Home",
+      street: "100 Main St",
+      city: "New York",
+      state: "NY",
+      zip: "10001",
+    });
+  });
+
+  it("parses addresses_json from form data when no indexed fields present", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Ada");
+    formData.set(
+      "addresses_json",
+      JSON.stringify([
+        {
+          type: "Work",
+          street: "1 Market St",
+          city: "SF",
+          state: "CA",
+          zip: "94105",
+        },
+      ]),
+    );
+
+    const { values: extracted, addressesError } =
+      await formDataToValues(formData);
+    expect(addressesError).toBeUndefined();
+    expect(extracted.addresses.length).toBe(1);
+    expect(extracted.addresses[0].street).toBe("1 Market St");
+  });
+
+  it("returns an error for malformed addresses_json and does not clear addresses silently", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Ada");
+    formData.set("addresses_json", "{invalid json");
+
+    const { addressesError } = await formDataToValues(formData);
+    expect(addressesError).toBe("Failed to parse address data.");
+  });
+
+  it("returns an error if addresses_json is not an array", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Ada");
+    formData.set("addresses_json", JSON.stringify({ type: "Home" }));
+
+    const { addressesError } = await formDataToValues(formData);
+    expect(addressesError).toBe("Invalid address format.");
   });
 
   it("converts a direct file upload into a base64 data URL when no photo string is present", async () => {
@@ -164,3 +260,106 @@ describe("formDataToValues", () => {
     expect(extracted.photo).toBe(resizedDataUrl);
   });
 });
+
+  it("handles non-string File values in indexed address controls by returning addressesError", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Grace");
+    formData.append("address_index", "0");
+
+    const mockFile = new File(["dummy"], "file.txt", { type: "text/plain" });
+    // Simulate a multipart File attached to an address field
+    formData.get = jest.fn((name: string) => {
+      if (name === "first_name") return "Grace";
+      if (name === "address_0_street") return mockFile;
+      return null;
+    });
+
+    const { addressesError } = await formDataToValues(formData);
+    expect(addressesError).toBe("Invalid address field value.");
+  });
+
+  it("handles non-string File in address_index by returning addressesError", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Grace");
+    const mockFile = new File(["dummy"], "file.txt", { type: "text/plain" });
+    formData.getAll = jest.fn((name: string) => {
+      if (name === "address_index") return [mockFile];
+      return [];
+    });
+
+    const { addressesError } = await formDataToValues(formData);
+    expect(addressesError).toBe("Invalid address index format.");
+  });
+
+  it("rejects blank or non-numeric address_index entries with addressesError", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Grace");
+    formData.append("address_index", "   ");
+
+    const { addressesError } = await formDataToValues(formData);
+    expect(addressesError).toBe("Invalid address index.");
+  });
+
+  it("rejects duplicate address_index entries with addressesError", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Grace");
+    formData.append("address_index", "0");
+    formData.append("address_index", "0");
+
+    const { addressesError } = await formDataToValues(formData);
+    expect(addressesError).toBe("Duplicate address index.");
+  });
+
+  it("rejects invalid address type values with addressesError instead of coercing to Home", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Grace");
+    formData.append("address_index", "0");
+    formData.set("address_0_type", "Vacation");
+
+    const { addressesError } = await formDataToValues(formData);
+    expect(addressesError).toBe("Invalid address type. Expected Home, Work, or Other.");
+  });
+
+  it("rejects non-positive or prefix-parsed address IDs with addressesError", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Grace");
+    formData.append("address_index", "0");
+    formData.set("address_0_id", "12abc");
+
+    const { addressesError } = await formDataToValues(formData);
+    expect(addressesError).toBe("Invalid address id.");
+
+    const formDataZero = new FormData();
+    formDataZero.set("first_name", "Grace");
+    formDataZero.append("address_index", "0");
+    formDataZero.set("address_0_id", "0");
+    const { addressesError: errZero } = await formDataToValues(formDataZero);
+    expect(errZero).toBe("Invalid address id.");
+
+    const formDataNeg = new FormData();
+    formDataNeg.set("first_name", "Grace");
+    formDataNeg.append("address_index", "0");
+    formDataNeg.set("address_0_id", "-5");
+    const { addressesError: errNeg } = await formDataToValues(formDataNeg);
+    expect(errNeg).toBe("Invalid address id.");
+  });
+
+  it("rejects non-positive or non-integer address IDs in addresses_json", async () => {
+    const formDataNeg = new FormData();
+    formDataNeg.set("first_name", "Grace");
+    formDataNeg.set("addresses_json", JSON.stringify([{ id: -1, type: "Home" }]));
+    const { addressesError: errNeg } = await formDataToValues(formDataNeg);
+    expect(errNeg).toBe("Invalid address id.");
+
+    const formDataZero = new FormData();
+    formDataZero.set("first_name", "Grace");
+    formDataZero.set("addresses_json", JSON.stringify([{ id: 0, type: "Home" }]));
+    const { addressesError: errZero } = await formDataToValues(formDataZero);
+    expect(errZero).toBe("Invalid address id.");
+
+    const formDataFloat = new FormData();
+    formDataFloat.set("first_name", "Grace");
+    formDataFloat.set("addresses_json", JSON.stringify([{ id: 1.5, type: "Home" }]));
+    const { addressesError: errFloat } = await formDataToValues(formDataFloat);
+    expect(errFloat).toBe("Invalid address id.");
+  });

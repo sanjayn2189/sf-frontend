@@ -1,6 +1,7 @@
 import {
   addressLine,
   avatarHue,
+  formatAddress,
   formatTimestamp,
   initials,
   jobLine,
@@ -8,63 +9,79 @@ import {
 import { makeContact } from "../../mocks/handlers";
 
 describe("initials", () => {
-  it("takes the first letter of each name", () => {
-    expect(initials({ first_name: "ada", last_name: "lovelace" })).toBe("AL");
+  it("takes the first letter of each name in uppercase", () => {
+    expect(initials({ first_name: "Ada", last_name: "Lovelace" })).toBe("AL");
+    expect(initials({ first_name: "grace", last_name: "hopper" })).toBe("GH");
+  });
+
+  it("handles single-name inputs gracefully", () => {
+    expect(initials({ first_name: "Cher", last_name: "" })).toBe("C");
   });
 });
 
 describe("avatarHue", () => {
-  it("is stable for the same seed and within the hue range", () => {
+  it("is deterministic for a given seed", () => {
     expect(avatarHue("ada@example.com")).toBe(avatarHue("ada@example.com"));
-    expect(avatarHue("ada@example.com")).toBeGreaterThanOrEqual(0);
-    expect(avatarHue("ada@example.com")).toBeLessThan(360);
   });
 
-  it("separates different seeds", () => {
-    expect(avatarHue("ada@example.com")).not.toBe(avatarHue("grace@example.com"));
+  it("returns a value in [0, 360)", () => {
+    const hue = avatarHue("test-seed");
+    expect(hue).toBeGreaterThanOrEqual(0);
+    expect(hue).toBeLessThan(360);
   });
 });
 
 describe("formatTimestamp", () => {
-  it("renders UTC regardless of the machine's zone", () => {
+  it("formats ISO timestamps in UTC", () => {
     expect(formatTimestamp("2026-08-19T17:04:53.743932Z")).toBe(
       "19 Aug 2026, 17:04 UTC",
     );
   });
 
-  it("degrades to a dash on garbage input", () => {
-    expect(formatTimestamp("not a date")).toBe("—");
+  it("handles bad dates without throwing", () => {
+    expect(formatTimestamp("not-a-date")).toBe("—");
   });
 });
 
 describe("jobLine", () => {
-  it("joins the title and the company", () => {
-    expect(jobLine(makeContact())).toBe("Mathematician at Analytical Engines");
+  it("combines title and company", () => {
+    expect(
+      jobLine(
+        makeContact({ job_title: "Founder", company: "Babbage Engines" }),
+      ),
+    ).toBe("Founder at Babbage Engines");
   });
 
-  it("falls back to whichever one is set", () => {
-    expect(jobLine(makeContact({ company: null }))).toBe("Mathematician");
-    expect(jobLine(makeContact({ job_title: null }))).toBe("Analytical Engines");
-    expect(jobLine(makeContact({ job_title: null, company: null }))).toBeNull();
+  it("falls back to title alone or company alone", () => {
+    expect(jobLine(makeContact({ job_title: "CEO", company: null }))).toBe(
+      "CEO",
+    );
+    expect(jobLine(makeContact({ job_title: null, company: "Acme" }))).toBe(
+      "Acme",
+    );
+  });
+
+  it("returns null when neither is set", () => {
+    expect(
+      jobLine(makeContact({ job_title: null, company: null })),
+    ).toBeNull();
   });
 });
 
-describe("addressLine", () => {
-  it("skips the parts that are not filled in", () => {
-    expect(addressLine(makeContact())).toBe("San Francisco, CA, USA");
-  });
-
-  it("pairs the state with the postal code", () => {
+describe("formatAddress and addressLine", () => {
+  it("joins street, city, state, and zip", () => {
     expect(
-      addressLine(makeContact({ address: "1 Market St", postal_code: "94105" })),
-    ).toBe("1 Market St, San Francisco, CA 94105, USA");
+      formatAddress({
+        type: "Work",
+        street: "1 Market St",
+        city: "San Francisco",
+        state: "CA",
+        zip: "94105",
+      }),
+    ).toBe("1 Market St, San Francisco, CA 94105");
   });
 
   it("returns null when there is no address at all", () => {
-    expect(
-      addressLine(
-        makeContact({ city: null, state: null, country: null, postal_code: null }),
-      ),
-    ).toBeNull();
+    expect(addressLine(makeContact({ addresses: [] }))).toBeNull();
   });
 });

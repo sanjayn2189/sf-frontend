@@ -17,7 +17,7 @@ function renderForm(action: jest.Mock, contact?: ReturnType<typeof makeContact>)
 }
 
 describe("ContactForm", () => {
-  it("renders every editable field", () => {
+  it("renders every editable field and add address button", () => {
     renderForm(jest.fn());
 
     expect(screen.getByLabelText(/first name/i)).toBeRequired();
@@ -26,20 +26,34 @@ describe("ContactForm", () => {
     expect(screen.getByLabelText(/phone/i)).not.toBeRequired();
     expect(screen.getByLabelText(/notes/i).tagName).toBe("TEXTAREA");
     expect(screen.getByLabelText(/^photo/i, { selector: "input" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add address/i })).toBeInTheDocument();
   });
 
-  it("prefills from an existing contact including photo", () => {
+  it("prefills from an existing contact including photo and addresses", () => {
     const existingPhoto = "data:image/png;base64,samplephoto";
-    renderForm(jest.fn(), makeContact({ photo: existingPhoto }));
+    renderForm(
+      jest.fn(),
+      makeContact({
+        photo: existingPhoto,
+        addresses: [
+          {
+            type: "Work",
+            street: "1 Market St, Suite 400",
+            city: "San Francisco",
+            state: "CA",
+            zip: "94105",
+          },
+        ],
+      }),
+    );
 
     expect(screen.getByLabelText(/first name/i)).toHaveValue("Ada");
     expect(screen.getByLabelText(/^email/i)).toHaveValue("ada@example.com");
-    // Nulls become empty inputs rather than the string "null".
-    expect(screen.getByLabelText(/street address/i)).toHaveValue("");
     expect(screen.getByAltText(/contact avatar preview/i)).toHaveAttribute("src", existingPhoto);
+    expect(screen.getByDisplayValue("1 Market St, Suite 400")).toBeInTheDocument();
   });
 
-  it("submits the entered values to the action", async () => {
+  it("allows dynamically adding and filling an address", async () => {
     const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
       async () => ({ status: "idle" }),
     );
@@ -48,13 +62,22 @@ describe("ContactForm", () => {
     await userEvent.type(screen.getByLabelText(/first name/i), "Grace");
     await userEvent.type(screen.getByLabelText(/last name/i), "Hopper");
     await userEvent.type(screen.getByLabelText(/^email/i), "grace@example.com");
-    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
 
+    // Add address
+    await userEvent.click(screen.getByRole("button", { name: /add address/i }));
+
+    const streetInput = screen.getByPlaceholderText(/1 market st/i);
+    await userEvent.type(streetInput, "Pentagon Room 3E");
+
+    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
     await waitFor(() => expect(action).toHaveBeenCalled());
 
     const formData = action.mock.calls[0][1];
-    expect(formData.get("first_name")).toBe("Grace");
-    expect(formData.get("email")).toBe("grace@example.com");
+    const addressesJson = formData.get("addresses_json") as string;
+    const parsed = JSON.parse(addressesJson);
+    expect(parsed.length).toBe(1);
+    expect(parsed[0].street).toBe("Pentagon Room 3E");
+    expect(parsed[0].type).toBe("Home");
   });
 
   it("preserves existing photo in PUT submit payload when editing name/email", async () => {
@@ -62,7 +85,21 @@ describe("ContactForm", () => {
       async () => ({ status: "idle" }),
     );
     const existingPhoto = "data:image/png;base64,preservedPhoto";
-    renderForm(action, makeContact({ photo: existingPhoto }));
+    renderForm(
+      action,
+      makeContact({
+        photo: existingPhoto,
+        addresses: [
+          {
+            type: "Work",
+            street: "1 Market St",
+            city: "San Francisco",
+            state: "CA",
+            zip: "94105",
+          },
+        ],
+      }),
+    );
 
     await userEvent.clear(screen.getByLabelText(/first name/i));
     await userEvent.type(screen.getByLabelText(/first name/i), "Augusta");
@@ -73,6 +110,8 @@ describe("ContactForm", () => {
     const formData = action.mock.calls[0][1];
     expect(formData.get("first_name")).toBe("Augusta");
     expect(formData.get("photo")).toBe(existingPhoto);
+    const addressesJson = formData.get("addresses_json") as string;
+    expect(JSON.parse(addressesJson).length).toBe(1);
   });
 
   it("allows removing an existing photo", async () => {
@@ -152,3 +191,92 @@ describe("ContactForm", () => {
     );
   });
 });
+
+  it("displays nested address validation errors and sets aria-invalid", async () => {
+    const action = jest.fn(
+      async (): Promise<FormState> => ({
+        status: "error",
+        message: "Please fix the highlighted fields.",
+        fieldErrors: {
+          "addresses.0.street": "Street must be 300 characters or fewer",
+          "addresses.0.zip": "Postal code must be 20 characters or fewer",
+        },
+        values: {
+          first_name: "Ada",
+          addresses: [
+            {
+              type: "Home",
+              street: "Too long street",
+              city: "San Francisco",
+              state: "CA",
+              zip: "123456789012345678901",
+            },
+          ],
+        },
+      }),
+    );
+    renderForm(
+      action,
+      makeContact({
+        addresses: [
+          {
+            type: "Home",
+            street: "Too long street",
+            city: "San Francisco",
+            state: "CA",
+            zip: "123456789012345678901",
+          },
+        ],
+      }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
+
+    const streetError = await screen.findByText("Street must be 300 characters or fewer");
+    expect(streetError).toBeInTheDocument();
+
+    const zipError = await screen.findByText("Postal code must be 20 characters or fewer");
+    expect(zipError).toBeInTheDocument();
+
+    expect(screen.getByPlaceholderText(/1 market st/i)).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByPlaceholderText(/94105/i)).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("clears error on removed address and shifts remaining positional errors correctly", async () => {
+    const action = jest.fn(
+      async (): Promise<FormState> => ({
+        status: "error",
+        message: "Please fix the highlighted fields.",
+        fieldErrors: {
+          "addresses.0.street": "Street 0 error",
+          "addresses.1.street": "Street 1 error",
+        },
+        values: {
+          first_name: "Ada",
+        },
+      }),
+    );
+    renderForm(
+      action,
+      makeContact({
+        addresses: [
+          { type: "Home", street: "Street 0" },
+          { type: "Work", street: "Street 1" },
+        ],
+      }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
+
+    expect(await screen.findByText("Street 0 error")).toBeInTheDocument();
+    expect(screen.getByText("Street 1 error")).toBeInTheDocument();
+
+    // Remove Address #1 (index 0)
+    const removeButtons = screen.getAllByRole("button", { name: /remove/i });
+    await userEvent.click(removeButtons[0]);
+
+    // Street 0 error should be removed completely
+    expect(screen.queryByText("Street 0 error")).not.toBeInTheDocument();
+    // Street 1 error should now be on the remaining address (re-indexed to 0)
+    expect(screen.getByText("Street 1 error")).toBeInTheDocument();
+  });

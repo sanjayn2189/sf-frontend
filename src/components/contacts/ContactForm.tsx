@@ -3,7 +3,7 @@
 import { useActionState, useRef, useState, type ChangeEvent } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
-import { AlertCircle, Camera, Loader2, X } from "lucide-react";
+import { AlertCircle, Camera, Loader2, Plus, Trash2, X } from "lucide-react";
 import Field from "@/components/ui/Field";
 import Button, { buttonClasses } from "@/components/ui/Button";
 import {
@@ -13,6 +13,8 @@ import {
 } from "@/lib/contacts/schema";
 import {
   EMPTY_FORM_STATE,
+  type Address,
+  type AddressType,
   type Contact,
   type ContactInput,
   type FormState,
@@ -24,6 +26,15 @@ export type ContactFormAction = (
   state: FormState,
   formData: FormData,
 ) => Promise<FormState>;
+
+interface AddressItem extends Address {
+  _key: string;
+}
+
+let keyCounter = 0;
+function createAddressItem(addr: Address): AddressItem {
+  return { ...addr, _key: `addr_${++keyCounter}_${Date.now()}` };
+}
 
 function SubmitButton({ label }: { label: string }) {
   const { pending } = useFormStatus();
@@ -67,9 +78,10 @@ function resizeImage(dataUrl: string, callback: (result: string) => void) {
 }
 
 /**
- * Create/edit form. The field list comes from `CONTACT_FIELD_GROUPS`, and the
- * action is a bound server action. Supports progressive enhancement with
- * direct multipart file upload before hydration or client-side downscaling when JS is active.
+ * Create/edit form with dynamic address array and photo avatar support.
+ * Supports progressive enhancement with indexed native form controls,
+ * displays nested validation errors, and prevents stale positional errors
+ * when modifying or removing address entries.
  */
 export default function ContactForm({
   action,
@@ -86,6 +98,24 @@ export default function ContactForm({
   const [userPhoto, setUserPhoto] = useState<string | null | undefined>(undefined);
   const [photoError, setPhotoError] = useState<string | null>(null);
 
+  // Dynamic address items with unique keys
+  const [addresses, setAddresses] = useState<AddressItem[]>(() => {
+    const initial =
+      state.values?.addresses && Array.isArray(state.values.addresses)
+        ? state.values.addresses
+        : (contact?.addresses ?? []);
+    return initial.map(createAddressItem);
+  });
+
+  // Local address errors tracked and shifted on removal
+  const [addressErrors, setAddressErrors] = useState<Partial<Record<string, string>>>({});
+  const [lastState, setLastState] = useState(state);
+
+  if (state !== lastState) {
+    setLastState(state);
+    setAddressErrors(state.fieldErrors ?? {});
+  }
+
   const activeReadIdRef = useRef<number>(0);
   const activeReaderRef = useRef<FileReader | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -97,8 +127,16 @@ export default function ContactForm({
         ? state.values.photo || null
         : (contact?.photo ?? null);
 
-  function valueFor(name: keyof ContactInput): string {
-    return state.values?.[name] ?? (contact?.[name] as string | undefined) ?? "";
+  function valueFor(name: keyof Omit<ContactInput, "addresses">): string {
+    return (
+      (state.values?.[name] as string | undefined) ??
+      (contact?.[name] as string | undefined) ??
+      ""
+    );
+  }
+
+  function addressError(index: number, field: string): string | undefined {
+    return addressErrors[`addresses.${index}.${field}`];
   }
 
   function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
@@ -157,6 +195,62 @@ export default function ContactForm({
     }
   }
 
+  function handleAddAddress() {
+    setAddresses((prev) => [
+      ...prev,
+      createAddressItem({ type: "Home", street: "", city: "", state: "", zip: "" }),
+    ]);
+  }
+
+  function handleRemoveAddress(index: number) {
+    setAddresses((prev) => prev.filter((_, i) => i !== index));
+
+    // Shift address error positions to prevent stale errors on neighboring addresses
+    setAddressErrors((prev) => {
+      const next: Partial<Record<string, string>> = {};
+      for (const [key, msg] of Object.entries(prev)) {
+        if (!msg) continue;
+        const match = key.match(/^addresses\.(\d+)\.(.+)$/);
+        if (match) {
+          const idx = Number.parseInt(match[1], 10);
+          const field = match[2];
+          if (idx < index) {
+            next[key] = msg;
+          } else if (idx > index) {
+            next[`addresses.${idx - 1}.${field}`] = msg;
+          }
+          // If idx === index: intentionally omitted (deleted with the removed address)
+        } else {
+          next[key] = msg;
+        }
+      }
+      return next;
+    });
+  }
+
+  function handleAddressChange(
+    index: number,
+    field: keyof Omit<Address, "id" | "contact_id">,
+    value: string,
+  ) {
+    setAddresses((prev) =>
+      prev.map((addr, i) =>
+        i === index ? { ...addr, [field]: value } : addr,
+      ),
+    );
+
+    // Clear error for this specific field as user edits it
+    setAddressErrors((prev) => {
+      const key = `addresses.${index}.${field}`;
+      if (key in prev) {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      return prev;
+    });
+  }
+
   const effectivePhotoError = photoError ?? state.fieldErrors?.photo;
 
   return (
@@ -175,8 +269,23 @@ export default function ContactForm({
         </div>
       ) : null}
 
-      {/* Hidden input to pass photo base64 string in form submission */}
+      {/* Hidden inputs to pass photo base64 and dynamic addresses array */}
       <input type="hidden" name="photo" value={activePhoto ?? ""} />
+      <input
+        type="hidden"
+        name="addresses_json"
+        value={JSON.stringify(
+          addresses.map((item) => ({
+            ...(item.id ? { id: item.id } : {}),
+            ...(item.contact_id ? { contact_id: item.contact_id } : {}),
+            type: item.type,
+            street: item.street,
+            city: item.city,
+            state: item.state,
+            zip: item.zip,
+          })),
+        )}
+      />
 
       {CONTACT_FIELD_GROUPS.map((group) => (
         <fieldset key={group.title} className="space-y-4">
@@ -274,6 +383,262 @@ export default function ContactForm({
           </div>
         </fieldset>
       ))}
+
+      {/* Dynamic Addresses Section */}
+      <fieldset className="space-y-4">
+        <div className="flex items-center justify-between border-b border-hairline pb-2">
+          <div>
+            <h2 className="font-display text-sm font-semibold text-foreground">
+              Addresses
+            </h2>
+            <p className="text-[13px] text-muted-foreground">
+              Add multiple typed addresses (Home, Work, Other).
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={handleAddAddress}
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
+            Add Address
+          </Button>
+        </div>
+
+        {addressErrors.addresses ? (
+          <p role="alert" className="text-[13px] text-destructive">
+            {addressErrors.addresses}
+          </p>
+        ) : null}
+
+        {addresses.length === 0 ? (
+          <p className="text-xs italic text-muted-foreground">
+            No addresses added yet. Click &quot;Add Address&quot; above to add one.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            {addresses.map((address, index) => (
+              <div
+                key={address._key}
+                className="relative rounded-lg border border-border/80 bg-card p-4 space-y-3 shadow-xs"
+              >
+                {/* Native hidden controls for indexed form submissions */}
+                <input type="hidden" name="address_index" value={index} />
+                {address.id ? (
+                  <input
+                    type="hidden"
+                    name={`address_${index}_id`}
+                    value={address.id}
+                  />
+                ) : null}
+
+                <div className="flex items-center justify-between gap-2 border-b border-hairline pb-2">
+                  <span className="text-xs font-semibold text-foreground">
+                    Address #{index + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveAddress(index)}
+                    aria-label={`Remove address ${index + 1}`}
+                    className="inline-flex items-center text-xs text-destructive hover:underline"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
+                    Remove
+                  </button>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-6">
+                  <div className="sm:col-span-2">
+                    <label
+                      htmlFor={`address-type-${index}`}
+                      className="mb-1 block text-[13px] font-medium text-foreground"
+                    >
+                      Type
+                    </label>
+                    <select
+                      id={`address-type-${index}`}
+                      name={`address_${index}_type`}
+                      value={address.type}
+                      onChange={(e) =>
+                        handleAddressChange(
+                          index,
+                          "type",
+                          e.target.value as AddressType,
+                        )
+                      }
+                      aria-invalid={Boolean(addressError(index, "type"))}
+                      aria-describedby={
+                        addressError(index, "type")
+                          ? `address-type-${index}-error`
+                          : undefined
+                      }
+                      className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                    >
+                      <option value="Home">Home</option>
+                      <option value="Work">Work</option>
+                      <option value="Other">Other</option>
+                    </select>
+                    {addressError(index, "type") ? (
+                      <p
+                        id={`address-type-${index}-error`}
+                        role="alert"
+                        className="mt-1 text-[13px] text-destructive"
+                      >
+                        {addressError(index, "type")}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="sm:col-span-4">
+                    <label
+                      htmlFor={`address-street-${index}`}
+                      className="mb-1 block text-[13px] font-medium text-foreground"
+                    >
+                      Street address
+                    </label>
+                    <input
+                      id={`address-street-${index}`}
+                      name={`address_${index}_street`}
+                      type="text"
+                      maxLength={300}
+                      placeholder="1 Market St, Suite 400"
+                      value={address.street ?? ""}
+                      onChange={(e) =>
+                        handleAddressChange(index, "street", e.target.value)
+                      }
+                      aria-invalid={Boolean(addressError(index, "street"))}
+                      aria-describedby={
+                        addressError(index, "street")
+                          ? `address-street-${index}-error`
+                          : undefined
+                      }
+                      className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                    />
+                    {addressError(index, "street") ? (
+                      <p
+                        id={`address-street-${index}-error`}
+                        role="alert"
+                        className="mt-1 text-[13px] text-destructive"
+                      >
+                        {addressError(index, "street")}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label
+                      htmlFor={`address-city-${index}`}
+                      className="mb-1 block text-[13px] font-medium text-foreground"
+                    >
+                      City
+                    </label>
+                    <input
+                      id={`address-city-${index}`}
+                      name={`address_${index}_city`}
+                      type="text"
+                      maxLength={120}
+                      placeholder="San Francisco"
+                      value={address.city ?? ""}
+                      onChange={(e) =>
+                        handleAddressChange(index, "city", e.target.value)
+                      }
+                      aria-invalid={Boolean(addressError(index, "city"))}
+                      aria-describedby={
+                        addressError(index, "city")
+                          ? `address-city-${index}-error`
+                          : undefined
+                      }
+                      className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                    />
+                    {addressError(index, "city") ? (
+                      <p
+                        id={`address-city-${index}-error`}
+                        role="alert"
+                        className="mt-1 text-[13px] text-destructive"
+                      >
+                        {addressError(index, "city")}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label
+                      htmlFor={`address-state-${index}`}
+                      className="mb-1 block text-[13px] font-medium text-foreground"
+                    >
+                      State / region
+                    </label>
+                    <input
+                      id={`address-state-${index}`}
+                      name={`address_${index}_state`}
+                      type="text"
+                      maxLength={120}
+                      placeholder="CA"
+                      value={address.state ?? ""}
+                      onChange={(e) =>
+                        handleAddressChange(index, "state", e.target.value)
+                      }
+                      aria-invalid={Boolean(addressError(index, "state"))}
+                      aria-describedby={
+                        addressError(index, "state")
+                          ? `address-state-${index}-error`
+                          : undefined
+                      }
+                      className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                    />
+                    {addressError(index, "state") ? (
+                      <p
+                        id={`address-state-${index}-error`}
+                        role="alert"
+                        className="mt-1 text-[13px] text-destructive"
+                      >
+                        {addressError(index, "state")}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label
+                      htmlFor={`address-zip-${index}`}
+                      className="mb-1 block text-[13px] font-medium text-foreground"
+                    >
+                      Postal code
+                    </label>
+                    <input
+                      id={`address-zip-${index}`}
+                      name={`address_${index}_zip`}
+                      type="text"
+                      maxLength={20}
+                      placeholder="94105"
+                      value={address.zip ?? ""}
+                      onChange={(e) =>
+                        handleAddressChange(index, "zip", e.target.value)
+                      }
+                      aria-invalid={Boolean(addressError(index, "zip"))}
+                      aria-describedby={
+                        addressError(index, "zip")
+                          ? `address-zip-${index}-error`
+                          : undefined
+                      }
+                      className="w-full rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                    />
+                    {addressError(index, "zip") ? (
+                      <p
+                        id={`address-zip-${index}-error`}
+                        role="alert"
+                        className="mt-1 text-[13px] text-destructive"
+                      >
+                        {addressError(index, "zip")}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </fieldset>
 
       <div className="flex items-center gap-2 border-t border-hairline pt-4">
         <SubmitButton label={submitLabel} />

@@ -19,13 +19,19 @@ export function makeContact(overrides: Partial<Contact> = {}): Contact {
     phone: "+1-415-555-0101",
     company: "Analytical Engines",
     job_title: "Mathematician",
-    address: null,
-    city: "San Francisco",
-    state: "CA",
-    postal_code: null,
-    country: "USA",
     notes: null,
     photo: null,
+    addresses: [
+      {
+        id: 1,
+        contact_id: 1,
+        type: "Work",
+        street: "1 Market St, Suite 400",
+        city: "San Francisco",
+        state: "CA",
+        zip: "94105",
+      },
+    ],
     created_at: "2026-08-19T17:04:53.743932Z",
     updated_at: "2026-08-19T17:04:53.743936Z",
     full_name: `${first_name} ${last_name}`,
@@ -47,6 +53,7 @@ export const CONTACTS: Contact[] = [
     company: "US Navy",
     job_title: "Rear Admiral",
     full_name: "Grace Hopper",
+    addresses: [],
   }),
 ];
 
