@@ -2,6 +2,7 @@ import {
   generateVCard,
   generateMultipleVCards,
   escapeVCardValue,
+  foldVCardLine,
   downloadVCard,
   downloadMultipleVCards,
 } from "@/lib/contacts/vcard";
@@ -49,6 +50,44 @@ describe("vcard generator", () => {
     );
   });
 
+  it("folds long lines at 75 octets using CRLF and whitespace", () => {
+    const longLine = "NOTE:" + "A".repeat(150);
+    const folded = foldVCardLine(longLine);
+
+    const physicalLines = folded.split("\r\n");
+    expect(physicalLines.length).toBe(3);
+    expect(physicalLines[0].length).toBe(75);
+    expect(physicalLines[1].startsWith(" ")).toBe(true);
+    expect(physicalLines[1].length).toBe(75);
+    expect(physicalLines[2].startsWith(" ")).toBe(true);
+
+    // Unfolding reconstructs the exact original logical line
+    const unfolded = folded.replace(/\r\n /g, "");
+    expect(unfolded).toBe(longLine);
+  });
+
+  it("folds long lines with multibyte unicode characters without splitting characters", () => {
+    // Emojis and CJK characters (3-4 bytes each)
+    const unicodeLine = "NOTE:" + "✨ 🚀 こんにちは 世界 ".repeat(10);
+    const folded = foldVCardLine(unicodeLine);
+
+    const physicalLines = folded.split("\r\n");
+    expect(physicalLines.length).toBeGreaterThan(1);
+    for (let i = 1; i < physicalLines.length; i++) {
+      expect(physicalLines[i].startsWith(" ")).toBe(true);
+    }
+
+    // Verify all physical lines are <= 75 bytes
+    const encoder = new TextEncoder();
+    for (const pLine of physicalLines) {
+      expect(encoder.encode(pLine).length).toBeLessThanOrEqual(75);
+    }
+
+    // Unfolding preserves exact unicode string
+    const unfolded = folded.replace(/\r\n /g, "");
+    expect(unfolded).toBe(unicodeLine);
+  });
+
   it("escapes phone values containing newlines and reserved characters", () => {
     const contactWithMultilinePhone: Contact = {
       ...mockContact,
@@ -59,23 +98,29 @@ describe("vcard generator", () => {
     expect(vcard).toContain("TEL;TYPE=CELL,VOICE:+1-415-555-0100\\next. 123\\;456\\,789");
   });
 
-  it("generates a complete vCard 3.0 string with all contact fields and ends with CRLF", () => {
+  it("generates a complete folded vCard 3.0 string with photo and ends with CRLF", () => {
     const vcard = generateVCard(mockContact);
 
-    expect(vcard).toContain("BEGIN:VCARD");
-    expect(vcard).toContain("VERSION:3.0");
-    expect(vcard).toContain("N:Lovelace;Ada;;;");
-    expect(vcard).toContain("FN:Ada Lovelace");
-    expect(vcard).toContain("EMAIL;TYPE=INTERNET:ada@analytical.engine");
-    expect(vcard).toContain("TEL;TYPE=CELL,VOICE:+1-415-555-0100");
-    expect(vcard).toContain("ORG:Analytical Engines\\, Inc.");
-    expect(vcard).toContain("TITLE:Lead Mathematician\\; Programmer");
-    expect(vcard).toContain("NOTE:First programmer in history.\\nNotes: works with Charles Babbage.");
-    expect(vcard).toContain("ADR;TYPE=HOME:;;12 Ockham Park;Surrey;England;GU23 6NP;");
-    expect(vcard).toContain("ADR;TYPE=WORK:;;10 St James's Square;London;Greater London;SW1Y 4LE;");
-    expect(vcard).toContain("PHOTO;ENCODING=b;TYPE=PNG:iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
-    expect(vcard).toContain("REV:2026-08-02T15:30:00Z");
+    expect(vcard).toContain("BEGIN:VCARD\r\n");
+    expect(vcard).toContain("VERSION:3.0\r\n");
+    expect(vcard).toContain("N:Lovelace;Ada;;;\r\n");
+    expect(vcard).toContain("FN:Ada Lovelace\r\n");
+    expect(vcard).toContain("EMAIL;TYPE=INTERNET:ada@analytical.engine\r\n");
+    expect(vcard).toContain("TEL;TYPE=CELL,VOICE:+1-415-555-0100\r\n");
+    expect(vcard).toContain("ORG:Analytical Engines\\, Inc.\r\n");
+    expect(vcard).toContain("TITLE:Lead Mathematician\\; Programmer\r\n");
+    expect(vcard).toContain("NOTE:First programmer in history.\\nNotes: works with Charles Babbage.\r\n");
+    expect(vcard).toContain("ADR;TYPE=HOME:;;12 Ockham Park;Surrey;England;GU23 6NP;\r\n");
+    expect(vcard).toContain("ADR;TYPE=WORK:;;10 St James's Square;London;Greater London;SW1Y 4LE;\r\n");
+    expect(vcard).toContain("PHOTO;ENCODING=b;TYPE=PNG:");
+    expect(vcard).toContain("REV:2026-08-02T15:30:00Z\r\n");
     expect(vcard.endsWith("END:VCARD\r\n")).toBe(true);
+
+    // Unfolded vCard contains the full base64 data unbroken
+    const unfolded = vcard.replace(/\r\n /g, "");
+    expect(unfolded).toContain(
+      "PHOTO;ENCODING=b;TYPE=PNG:iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+    );
   });
 
   it("generates multiple vCards in a single string", () => {

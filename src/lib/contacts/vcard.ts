@@ -16,8 +16,45 @@ export function escapeVCardValue(value: string): string {
 }
 
 /**
+ * Folds a single vCard logical line into physical lines of at most 75 bytes,
+ * using CRLF followed by a single space for continuation lines (RFC 2425 / RFC 6350).
+ * Preserves multibyte character boundaries safely without splitting them.
+ */
+export function foldVCardLine(line: string, maxLength = 75): string {
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(line);
+  if (bytes.length <= maxLength) {
+    return line;
+  }
+
+  const chunks: string[] = [];
+  let currentChunk = "";
+  let currentByteLength = 0;
+  let limit = maxLength;
+
+  for (const char of line) {
+    const charBytes = encoder.encode(char).length;
+    if (currentByteLength + charBytes > limit && currentChunk.length > 0) {
+      chunks.push(currentChunk);
+      currentChunk = char;
+      currentByteLength = charBytes;
+      limit = maxLength - 1; // Continuation lines have a 1-byte leading space
+    } else {
+      currentChunk += char;
+      currentByteLength += charBytes;
+    }
+  }
+
+  if (currentChunk) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks.join("\r\n ");
+}
+
+/**
  * Generates an RFC 6350 / vCard 3.0 formatted string for a contact.
- * Includes a trailing CRLF terminator as required by the specification.
+ * Includes line folding for long lines and trailing CRLF terminator.
  */
 export function generateVCard(contact: Contact): string {
   const lines: string[] = [
@@ -91,7 +128,10 @@ export function generateVCard(contact: Contact): string {
   }
 
   lines.push("END:VCARD");
-  return `${lines.join("\r\n")}\r\n`;
+
+  // Apply vCard line folding to every content line
+  const foldedLines = lines.map((line) => foldVCardLine(line));
+  return `${foldedLines.join("\r\n")}\r\n`;
 }
 
 /**
