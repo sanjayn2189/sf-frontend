@@ -83,7 +83,7 @@ describe("formDataToValues", () => {
     formData.set("email", "grace@example.com");
     formData.set("ignored", "nope");
 
-    const extracted = await formDataToValues(formData);
+    const { values: extracted } = await formDataToValues(formData);
 
     expect(extracted.first_name).toBe("Grace");
     expect(extracted.last_name).toBe("");
@@ -92,7 +92,7 @@ describe("formDataToValues", () => {
     );
   });
 
-  it("converts a direct file upload into a base64 data URL", async () => {
+  it("converts a direct file upload into a base64 data URL when no photo string is present", async () => {
     const formData = new FormData();
     formData.set("first_name", "Grace");
     const mockFile = {
@@ -106,7 +106,61 @@ describe("formDataToValues", () => {
       return null;
     });
 
-    const extracted = await formDataToValues(formData);
+    const { values: extracted, photoError } = await formDataToValues(formData);
+    expect(photoError).toBeUndefined();
     expect(extracted.photo).toMatch(/^data:image\/png;base64,/);
+  });
+
+  it("returns an error for files exceeding the 2MB size limit", async () => {
+    const formData = new FormData();
+    const oversizedFile = {
+      size: 3 * 1024 * 1024,
+      type: "image/png",
+      arrayBuffer: async () => Buffer.from(""),
+    };
+    formData.get = jest.fn((name: string) => {
+      if (name === "photo_file") return oversizedFile as unknown as File;
+      return null;
+    });
+
+    const { photoError } = await formDataToValues(formData);
+    expect(photoError).toBe("Photo must be 2MB or smaller.");
+  });
+
+  it("returns an error for unsupported file MIME types", async () => {
+    const formData = new FormData();
+    const pdfFile = {
+      size: 500,
+      type: "application/pdf",
+      arrayBuffer: async () => Buffer.from(""),
+    };
+    formData.get = jest.fn((name: string) => {
+      if (name === "photo_file") return pdfFile as unknown as File;
+      return null;
+    });
+
+    const { photoError } = await formDataToValues(formData);
+    expect(photoError).toBe("Photo must be a JPG, PNG, GIF, or WebP image.");
+  });
+
+  it("prefers client-resized photo value over raw photo_file in hydrated submissions", async () => {
+    const resizedDataUrl = "data:image/jpeg;base64,resizedClientPhotoData";
+    const rawFile = {
+      size: 2_000_000,
+      type: "image/png",
+      arrayBuffer: async () => Buffer.from("large unresized image bytes"),
+    };
+
+    const formData = new FormData();
+    formData.get = jest.fn((name: string) => {
+      if (name === "photo") return resizedDataUrl;
+      if (name === "photo_file") return rawFile as unknown as File;
+      if (name === "first_name") return "Grace";
+      return null;
+    });
+
+    const { values: extracted, photoError } = await formDataToValues(formData);
+    expect(photoError).toBeUndefined();
+    expect(extracted.photo).toBe(resizedDataUrl);
   });
 });

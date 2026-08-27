@@ -38,14 +38,19 @@ export async function saveContactAction(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const values = await formDataToValues(formData);
+  const { values, photoError } = await formDataToValues(formData);
 
   const parsed = contactInputSchema.safeParse(values);
-  if (!parsed.success) {
+  const fieldErrors = parsed.success ? {} : zodFieldErrors(parsed.error);
+  if (photoError) {
+    fieldErrors.photo = photoError;
+  }
+
+  if (!parsed.success || photoError) {
     return {
       status: "error",
       message: "Please fix the highlighted fields.",
-      fieldErrors: zodFieldErrors(parsed.error),
+      fieldErrors,
       values,
     };
   }

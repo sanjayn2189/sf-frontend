@@ -6,7 +6,11 @@ import Link from "next/link";
 import { AlertCircle, Camera, Loader2, X } from "lucide-react";
 import Field from "@/components/ui/Field";
 import Button, { buttonClasses } from "@/components/ui/Button";
-import { CONTACT_FIELD_GROUPS } from "@/lib/contacts/schema";
+import {
+  ALLOWED_PHOTO_MIME_TYPES,
+  CONTACT_FIELD_GROUPS,
+  MAX_PHOTO_SOURCE_BYTES,
+} from "@/lib/contacts/schema";
 import {
   EMPTY_FORM_STATE,
   type Contact,
@@ -14,7 +18,6 @@ import {
   type FormState,
 } from "@/lib/contacts/types";
 
-const MAX_PHOTO_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB source limit
 const MAX_DIMENSION = 600; // Max width/height for avatar scaling
 
 export type ContactFormAction = (
@@ -108,8 +111,14 @@ export default function ContactForm({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > MAX_PHOTO_SIZE_BYTES) {
+    if (file.size > MAX_PHOTO_SOURCE_BYTES) {
       setPhotoError("Photo must be 2MB or smaller.");
+      e.target.value = "";
+      return;
+    }
+
+    if (file.type && !ALLOWED_PHOTO_MIME_TYPES.includes(file.type)) {
+      setPhotoError("Photo must be a JPG, PNG, GIF, or WebP image.");
       e.target.value = "";
       return;
     }
@@ -193,7 +202,7 @@ export default function ContactForm({
                     >
                       {field.label}
                       <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
-                        optional (JPG, PNG, GIF up to 2MB)
+                        optional (JPG, PNG, GIF, WebP up to 2MB)
                       </span>
                     </label>
 
@@ -227,7 +236,7 @@ export default function ContactForm({
                           id="field-photo-input"
                           name="photo_file"
                           type="file"
-                          accept="image/*"
+                          accept="image/jpeg,image/png,image/gif,image/webp"
                           aria-label="Photo"
                           onChange={handlePhotoChange}
                           className="block text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary hover:file:bg-primary/20 cursor-pointer"
