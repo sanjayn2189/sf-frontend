@@ -59,7 +59,7 @@ describe("vcard generator", () => {
     expect(vcard).toContain("TEL;TYPE=CELL,VOICE:+1-415-555-0100\\next. 123\\;456\\,789");
   });
 
-  it("generates a complete vCard 3.0 string with all contact fields", () => {
+  it("generates a complete vCard 3.0 string with all contact fields and ends with CRLF", () => {
     const vcard = generateVCard(mockContact);
 
     expect(vcard).toContain("BEGIN:VCARD");
@@ -75,7 +75,7 @@ describe("vcard generator", () => {
     expect(vcard).toContain("ADR;TYPE=WORK:;;10 St James's Square;London;Greater London;SW1Y 4LE;");
     expect(vcard).toContain("PHOTO;ENCODING=b;TYPE=PNG:iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
     expect(vcard).toContain("REV:2026-08-02T15:30:00Z");
-    expect(vcard).toContain("END:VCARD");
+    expect(vcard.endsWith("END:VCARD\r\n")).toBe(true);
   });
 
   it("generates multiple vCards in a single string", () => {
@@ -84,7 +84,7 @@ describe("vcard generator", () => {
     expect(count).toBe(2);
   });
 
-  it("handles minimal contacts gracefully without optional fields", () => {
+  it("handles minimal contacts gracefully without optional fields and ends with CRLF", () => {
     const minimalContact: Contact = {
       id: 1,
       first_name: "Alan",
@@ -113,7 +113,7 @@ describe("vcard generator", () => {
     expect(vcard).not.toContain("TITLE:");
     expect(vcard).not.toContain("ADR;");
     expect(vcard).not.toContain("PHOTO;");
-    expect(vcard).toContain("END:VCARD");
+    expect(vcard.endsWith("END:VCARD\r\n")).toBe(true);
   });
 
   it("triggers browser download with formatted filename", () => {

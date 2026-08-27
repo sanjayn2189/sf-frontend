@@ -17,6 +17,7 @@ export function escapeVCardValue(value: string): string {
 
 /**
  * Generates an RFC 6350 / vCard 3.0 formatted string for a contact.
+ * Includes a trailing CRLF terminator as required by the specification.
  */
 export function generateVCard(contact: Contact): string {
   const lines: string[] = [
@@ -90,14 +91,14 @@ export function generateVCard(contact: Contact): string {
   }
 
   lines.push("END:VCARD");
-  return lines.join("\r\n");
+  return `${lines.join("\r\n")}\r\n`;
 }
 
 /**
  * Generates a single vCard file containing multiple contacts.
  */
 export function generateMultipleVCards(contacts: Contact[]): string {
-  return contacts.map(generateVCard).join("\r\n\r\n");
+  return contacts.map(generateVCard).join("\r\n");
 }
 
 /**
