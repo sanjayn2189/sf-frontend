@@ -69,8 +69,8 @@ function resizeImage(dataUrl: string, callback: (result: string) => void) {
 }
 
 /**
- * Create/edit form. Dynamic address array and photo avatar support.
- * Supports progressive enhancement with server-side multipart conversion
+ * Create/edit form with dynamic address array and photo avatar support.
+ * Supports progressive enhancement with indexed native form controls
  * and retains full PUT payload contracts.
  */
 export default function ContactForm({
@@ -350,6 +350,16 @@ export default function ContactForm({
                 key={index}
                 className="relative rounded-lg border border-border/80 bg-card p-4 space-y-3 shadow-xs"
               >
+                {/* Native hidden controls for indexed form submissions */}
+                <input type="hidden" name="address_index" value={index} />
+                {address.id ? (
+                  <input
+                    type="hidden"
+                    name={`address_${index}_id`}
+                    value={address.id}
+                  />
+                ) : null}
+
                 <div className="flex items-center justify-between gap-2 border-b border-hairline pb-2">
                   <span className="text-xs font-semibold text-foreground">
                     Address #{index + 1}
@@ -375,6 +385,7 @@ export default function ContactForm({
                     </label>
                     <select
                       id={`address-type-${index}`}
+                      name={`address_${index}_type`}
                       value={address.type}
                       onChange={(e) =>
                         handleAddressChange(
@@ -400,6 +411,7 @@ export default function ContactForm({
                     </label>
                     <input
                       id={`address-street-${index}`}
+                      name={`address_${index}_street`}
                       type="text"
                       placeholder="1 Market St, Suite 400"
                       value={address.street ?? ""}
@@ -419,6 +431,7 @@ export default function ContactForm({
                     </label>
                     <input
                       id={`address-city-${index}`}
+                      name={`address_${index}_city`}
                       type="text"
                       placeholder="San Francisco"
                       value={address.city ?? ""}
@@ -438,6 +451,7 @@ export default function ContactForm({
                     </label>
                     <input
                       id={`address-state-${index}`}
+                      name={`address_${index}_state`}
                       type="text"
                       placeholder="CA"
                       value={address.state ?? ""}
@@ -457,6 +471,7 @@ export default function ContactForm({
                     </label>
                     <input
                       id={`address-zip-${index}`}
+                      name={`address_${index}_zip`}
                       type="text"
                       placeholder="94105"
                       value={address.zip ?? ""}

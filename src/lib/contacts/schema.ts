@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Address, ContactInput } from "./types";
+import type { Address, AddressType, ContactInput } from "./types";
 
 /**
  * Client/server-shared validation for the contact form.
@@ -204,6 +204,7 @@ export const CONTACT_FIELDS: ContactFieldSpec[] = CONTACT_FIELD_GROUPS.flatMap(
 export interface FormDataValuesResult {
   values: ContactInput;
   photoError?: string;
+  addressesError?: string;
 }
 
 /** Pull the contact fields out of a submitted form, converting direct file uploads to base64 and parsing addresses. */
@@ -217,17 +218,48 @@ export async function formDataToValues(
     }),
   ) as Record<keyof Omit<ContactInput, "addresses">, string>;
 
-  const addresses: Address[] = (() => {
+  // Progressive enhancement: extract indexed address inputs first
+  const addressIndices = formData.getAll("address_index");
+  let addresses: Address[] = [];
+  let addressesError: string | undefined;
+
+  if (addressIndices.length > 0) {
+    for (const idxStr of addressIndices) {
+      const idx = String(idxStr);
+      const typeRaw = formData.get(`address_${idx}_type`);
+      const type: AddressType =
+        typeRaw === "Work" || typeRaw === "Other" ? typeRaw : "Home";
+      const street = (formData.get(`address_${idx}_street`) as string) || null;
+      const city = (formData.get(`address_${idx}_city`) as string) || null;
+      const state = (formData.get(`address_${idx}_state`) as string) || null;
+      const zip = (formData.get(`address_${idx}_zip`) as string) || null;
+      const idRaw = formData.get(`address_${idx}_id`);
+      const id = idRaw ? Number.parseInt(String(idRaw), 10) : undefined;
+
+      addresses.push({
+        ...(id && !Number.isNaN(id) ? { id } : {}),
+        type,
+        street: street ? street.trim() : null,
+        city: city ? city.trim() : null,
+        state: state ? state.trim() : null,
+        zip: zip ? zip.trim() : null,
+      });
+    }
+  } else {
     const addressesJson = formData.get("addresses_json");
     if (typeof addressesJson === "string" && addressesJson.trim()) {
       try {
-        return JSON.parse(addressesJson) as Address[];
+        const parsed = JSON.parse(addressesJson);
+        if (Array.isArray(parsed)) {
+          addresses = parsed as Address[];
+        } else {
+          addressesError = "Invalid address format.";
+        }
       } catch {
-        return [];
+        addressesError = "Failed to parse address data.";
       }
     }
-    return [];
-  })();
+  }
 
   const values: ContactInput = {
     ...rawFields,
@@ -272,5 +304,5 @@ export async function formDataToValues(
     }
   }
 
-  return { values, photoError };
+  return { values, photoError, addressesError };
 }

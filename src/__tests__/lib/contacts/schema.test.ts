@@ -110,7 +110,44 @@ describe("formDataToValues", () => {
     );
   });
 
-  it("parses addresses_json from form data", async () => {
+  it("parses progressive-enhancement indexed address controls from form data", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Grace");
+    formData.set("email", "grace@example.com");
+    formData.append("address_index", "0");
+    formData.append("address_index", "1");
+
+    formData.set("address_0_type", "Work");
+    formData.set("address_0_street", "Pentagon Room 3E");
+    formData.set("address_0_city", "Arlington");
+    formData.set("address_0_state", "VA");
+    formData.set("address_0_zip", "20301");
+
+    formData.set("address_1_type", "Home");
+    formData.set("address_1_street", "100 Main St");
+    formData.set("address_1_city", "New York");
+    formData.set("address_1_state", "NY");
+    formData.set("address_1_zip", "10001");
+
+    const { values: extracted } = await formDataToValues(formData);
+    expect(extracted.addresses.length).toBe(2);
+    expect(extracted.addresses[0]).toEqual({
+      type: "Work",
+      street: "Pentagon Room 3E",
+      city: "Arlington",
+      state: "VA",
+      zip: "20301",
+    });
+    expect(extracted.addresses[1]).toEqual({
+      type: "Home",
+      street: "100 Main St",
+      city: "New York",
+      state: "NY",
+      zip: "10001",
+    });
+  });
+
+  it("parses addresses_json from form data when no indexed fields present", async () => {
     const formData = new FormData();
     formData.set("first_name", "Ada");
     formData.set(
@@ -126,9 +163,29 @@ describe("formDataToValues", () => {
       ]),
     );
 
-    const { values: extracted } = await formDataToValues(formData);
+    const { values: extracted, addressesError } =
+      await formDataToValues(formData);
+    expect(addressesError).toBeUndefined();
     expect(extracted.addresses.length).toBe(1);
     expect(extracted.addresses[0].street).toBe("1 Market St");
+  });
+
+  it("returns an error for malformed addresses_json and does not clear addresses silently", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Ada");
+    formData.set("addresses_json", "{invalid json");
+
+    const { addressesError } = await formDataToValues(formData);
+    expect(addressesError).toBe("Failed to parse address data.");
+  });
+
+  it("returns an error if addresses_json is not an array", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Ada");
+    formData.set("addresses_json", JSON.stringify({ type: "Home" }));
+
+    const { addressesError } = await formDataToValues(formData);
+    expect(addressesError).toBe("Invalid address format.");
   });
 
   it("converts a direct file upload into a base64 data URL when no photo string is present", async () => {
