@@ -54,6 +54,11 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [{ source: "/", destination: "/contacts", permanent: true }];
   },
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "5mb",
+    },
+  },
   env: {
     NEXT_PUBLIC_APP_VERSION: appVersion,
     NEXT_PUBLIC_BUILD_NUMBER: buildNumber,

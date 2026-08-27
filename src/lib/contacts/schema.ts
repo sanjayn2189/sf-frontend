@@ -55,6 +55,7 @@ export const contactInputSchema = z.object({
   photo: z
     .string()
     .trim()
+    .max(3_000_000, "Photo must be 2MB or smaller")
     .transform((value) => value || null)
     .nullable()
     .default(null),
@@ -107,7 +108,7 @@ export const CONTACT_FIELD_GROUPS: ContactFieldGroup[] = [
         name: "photo",
         label: "Photo",
         type: "file",
-        maxLength: 10_000_000,
+        maxLength: 3_000_000,
         placeholder: "Upload photo",
         wide: true,
       },
@@ -228,14 +229,27 @@ export const CONTACT_FIELDS: ContactFieldSpec[] = CONTACT_FIELD_GROUPS.flatMap(
   (group) => group.fields,
 );
 
-/** Pull the contact fields out of a submitted form, as raw strings. */
-export function formDataToValues(
+/** Pull the contact fields out of a submitted form, converting direct file uploads to base64 if needed. */
+export async function formDataToValues(
   formData: FormData,
-): Record<keyof ContactInput, string> {
-  return Object.fromEntries(
-    CONTACT_FIELDS.map((field) => [
-      field.name,
-      String(formData.get(field.name) ?? ""),
-    ]),
+): Promise<Record<keyof ContactInput, string>> {
+  const values = Object.fromEntries(
+    CONTACT_FIELDS.map((field) => {
+      const val = formData.get(field.name);
+      return [field.name, typeof val === "string" ? val : ""];
+    }),
   ) as Record<keyof ContactInput, string>;
+
+  const photoFile = formData.get("photo_file") ?? formData.get("photo");
+  if (photoFile && typeof photoFile === "object" && "arrayBuffer" in photoFile) {
+    const file = photoFile as Blob;
+    if (file.size > 0) {
+      const bytes = await file.arrayBuffer();
+      const base64 = Buffer.from(bytes).toString("base64");
+      const mimeType = file.type || "image/jpeg";
+      values.photo = `data:${mimeType};base64,${base64}`;
+    }
+  }
+
+  return values;
 }

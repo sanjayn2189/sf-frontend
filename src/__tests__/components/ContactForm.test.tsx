@@ -25,7 +25,7 @@ describe("ContactForm", () => {
     expect(screen.getByLabelText(/^email/i)).toBeRequired();
     expect(screen.getByLabelText(/phone/i)).not.toBeRequired();
     expect(screen.getByLabelText(/notes/i).tagName).toBe("TEXTAREA");
-    expect(screen.getByLabelText(/photo/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^photo/i, { selector: "input" })).toBeInTheDocument();
   });
 
   it("prefills from an existing contact including photo", () => {
@@ -91,6 +91,31 @@ describe("ContactForm", () => {
 
     const formData = action.mock.calls[0][1];
     expect(formData.get("photo")).toBe("");
+  });
+
+  it("clears the file input value when removing a photo", async () => {
+    const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
+      async () => ({ status: "idle" }),
+    );
+    const existingPhoto = "data:image/png;base64,removablePhoto";
+    renderForm(action, makeContact({ photo: existingPhoto }));
+
+    const fileInput = screen.getByLabelText(/^photo/i, { selector: "input" }) as HTMLInputElement;
+    const file = new File(["dummy content"], "avatar.png", { type: "image/png" });
+
+    // Set a file on the input
+    await userEvent.upload(fileInput, file);
+
+    // Remove photo
+    const removeBtn = screen.getByRole("button", { name: /remove photo/i });
+    await userEvent.click(removeBtn);
+
+    // File input value should be cleared to empty string
+    expect(fileInput.value).toBe("");
+
+    // Reselecting the same file works without restriction
+    await userEvent.upload(fileInput, file);
+    expect(fileInput.files?.[0]).toBe(file);
   });
 
   it("shows the summary and the per-field errors the action returns", async () => {

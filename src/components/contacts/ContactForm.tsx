@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, type ChangeEvent } from "react";
+import { useActionState, useRef, useState, type ChangeEvent } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { AlertCircle, Camera, Loader2, X } from "lucide-react";
@@ -13,6 +13,9 @@ import {
   type ContactInput,
   type FormState,
 } from "@/lib/contacts/types";
+
+const MAX_PHOTO_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB source limit
+const MAX_DIMENSION = 600; // Max width/height for avatar scaling
 
 export type ContactFormAction = (
   state: FormState,
@@ -32,10 +35,38 @@ function SubmitButton({ label }: { label: string }) {
   );
 }
 
+function resizeImage(dataUrl: string, callback: (result: string) => void) {
+  const img = new Image();
+  img.onload = () => {
+    let { width, height } = img;
+    if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+      if (width > height) {
+        height = Math.round((height * MAX_DIMENSION) / width);
+        width = MAX_DIMENSION;
+      } else {
+        width = Math.round((width * MAX_DIMENSION) / height);
+        height = MAX_DIMENSION;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        callback(canvas.toDataURL("image/jpeg", 0.85));
+        return;
+      }
+    }
+    callback(dataUrl);
+  };
+  img.onerror = () => callback(dataUrl);
+  img.src = dataUrl;
+}
+
 /**
  * Create/edit form. The field list comes from `CONTACT_FIELD_GROUPS`, and the
- * action is a bound server action — so a submit is a plain POST that works
- * before hydration and reports errors through `useActionState`.
+ * action is a bound server action. Supports progressive enhancement with
+ * direct multipart file upload before hydration or client-side downscaling when JS is active.
  */
 export default function ContactForm({
   action,
@@ -50,6 +81,11 @@ export default function ContactForm({
 }) {
   const [state, formAction] = useActionState(action, EMPTY_FORM_STATE);
   const [userPhoto, setUserPhoto] = useState<string | null | undefined>(undefined);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+
+  const activeReadIdRef = useRef<number>(0);
+  const activeReaderRef = useRef<FileReader | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activePhoto =
     userPhoto !== undefined
@@ -63,20 +99,56 @@ export default function ContactForm({
   }
 
   function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
+    const currentReadId = ++activeReadIdRef.current;
+    if (activeReaderRef.current) {
+      activeReaderRef.current.abort();
+      activeReaderRef.current = null;
+    }
+
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.size > MAX_PHOTO_SIZE_BYTES) {
+      setPhotoError("Photo must be 2MB or smaller.");
+      e.target.value = "";
+      return;
+    }
+
+    setPhotoError(null);
     const reader = new FileReader();
+    activeReaderRef.current = reader;
+
     reader.onload = () => {
+      if (currentReadId !== activeReadIdRef.current) return;
+      activeReaderRef.current = null;
       if (typeof reader.result === "string") {
-        setUserPhoto(reader.result);
+        resizeImage(reader.result, (scaled) => {
+          if (currentReadId !== activeReadIdRef.current) return;
+          setUserPhoto(scaled);
+        });
       }
+    };
+    reader.onerror = () => {
+      if (currentReadId !== activeReadIdRef.current) return;
+      activeReaderRef.current = null;
     };
     reader.readAsDataURL(file);
   }
 
   function handleRemovePhoto() {
+    ++activeReadIdRef.current;
+    if (activeReaderRef.current) {
+      activeReaderRef.current.abort();
+      activeReaderRef.current = null;
+    }
     setUserPhoto(null);
+    setPhotoError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   }
+
+  const effectivePhotoError = photoError ?? state.fieldErrors?.photo;
 
   return (
     <form action={formAction} noValidate className="space-y-8">
@@ -121,7 +193,7 @@ export default function ContactForm({
                     >
                       {field.label}
                       <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
-                        optional (JPG, PNG, GIF)
+                        optional (JPG, PNG, GIF up to 2MB)
                       </span>
                     </label>
 
@@ -151,7 +223,9 @@ export default function ContactForm({
 
                       <div className="flex flex-col gap-1.5">
                         <input
+                          ref={fileInputRef}
                           id="field-photo-input"
+                          name="photo_file"
                           type="file"
                           accept="image/*"
                           aria-label="Photo"
@@ -170,9 +244,9 @@ export default function ContactForm({
                       </div>
                     </div>
 
-                    {state.fieldErrors?.photo ? (
+                    {effectivePhotoError ? (
                       <p role="alert" className="mt-1 text-[13px] text-destructive">
-                        {state.fieldErrors.photo}
+                        {effectivePhotoError}
                       </p>
                     ) : null}
                   </div>

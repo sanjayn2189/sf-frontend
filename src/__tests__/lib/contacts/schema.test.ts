@@ -77,18 +77,36 @@ describe("contactInputSchema", () => {
 });
 
 describe("formDataToValues", () => {
-  it("pulls every known field out, defaulting to an empty string", () => {
+  it("pulls every known field out, defaulting to an empty string", async () => {
     const formData = new FormData();
     formData.set("first_name", "Grace");
     formData.set("email", "grace@example.com");
     formData.set("ignored", "nope");
 
-    const extracted = formDataToValues(formData);
+    const extracted = await formDataToValues(formData);
 
     expect(extracted.first_name).toBe("Grace");
     expect(extracted.last_name).toBe("");
     expect(Object.keys(extracted).sort()).toEqual(
       CONTACT_FIELDS.map((field) => field.name).sort(),
     );
+  });
+
+  it("converts a direct file upload into a base64 data URL", async () => {
+    const formData = new FormData();
+    formData.set("first_name", "Grace");
+    const mockFile = {
+      size: 18,
+      type: "image/png",
+      arrayBuffer: async () => Buffer.from("sample image bytes"),
+    };
+    formData.get = jest.fn((name: string) => {
+      if (name === "photo_file") return mockFile as unknown as File;
+      if (name === "first_name") return "Grace";
+      return null;
+    });
+
+    const extracted = await formDataToValues(formData);
+    expect(extracted.photo).toMatch(/^data:image\/png;base64,/);
   });
 });
