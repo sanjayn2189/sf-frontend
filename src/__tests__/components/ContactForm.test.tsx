@@ -25,15 +25,18 @@ describe("ContactForm", () => {
     expect(screen.getByLabelText(/^email/i)).toBeRequired();
     expect(screen.getByLabelText(/phone/i)).not.toBeRequired();
     expect(screen.getByLabelText(/notes/i).tagName).toBe("TEXTAREA");
+    expect(screen.getByLabelText(/^photo/i, { selector: "input" })).toBeInTheDocument();
   });
 
-  it("prefills from an existing contact", () => {
-    renderForm(jest.fn(), makeContact());
+  it("prefills from an existing contact including photo", () => {
+    const existingPhoto = "data:image/png;base64,samplephoto";
+    renderForm(jest.fn(), makeContact({ photo: existingPhoto }));
 
     expect(screen.getByLabelText(/first name/i)).toHaveValue("Ada");
     expect(screen.getByLabelText(/^email/i)).toHaveValue("ada@example.com");
     // Nulls become empty inputs rather than the string "null".
     expect(screen.getByLabelText(/street address/i)).toHaveValue("");
+    expect(screen.getByAltText(/contact avatar preview/i)).toHaveAttribute("src", existingPhoto);
   });
 
   it("submits the entered values to the action", async () => {
@@ -52,6 +55,67 @@ describe("ContactForm", () => {
     const formData = action.mock.calls[0][1];
     expect(formData.get("first_name")).toBe("Grace");
     expect(formData.get("email")).toBe("grace@example.com");
+  });
+
+  it("preserves existing photo in PUT submit payload when editing name/email", async () => {
+    const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
+      async () => ({ status: "idle" }),
+    );
+    const existingPhoto = "data:image/png;base64,preservedPhoto";
+    renderForm(action, makeContact({ photo: existingPhoto }));
+
+    await userEvent.clear(screen.getByLabelText(/first name/i));
+    await userEvent.type(screen.getByLabelText(/first name/i), "Augusta");
+    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+
+    const formData = action.mock.calls[0][1];
+    expect(formData.get("first_name")).toBe("Augusta");
+    expect(formData.get("photo")).toBe(existingPhoto);
+  });
+
+  it("allows removing an existing photo", async () => {
+    const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
+      async () => ({ status: "idle" }),
+    );
+    const existingPhoto = "data:image/png;base64,removablePhoto";
+    renderForm(action, makeContact({ photo: existingPhoto }));
+
+    const removeBtn = screen.getByRole("button", { name: /remove photo/i });
+    await userEvent.click(removeBtn);
+
+    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+
+    const formData = action.mock.calls[0][1];
+    expect(formData.get("photo")).toBe("");
+  });
+
+  it("clears the file input value when removing a photo", async () => {
+    const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
+      async () => ({ status: "idle" }),
+    );
+    const existingPhoto = "data:image/png;base64,removablePhoto";
+    renderForm(action, makeContact({ photo: existingPhoto }));
+
+    const fileInput = screen.getByLabelText(/^photo/i, { selector: "input" }) as HTMLInputElement;
+    const file = new File(["dummy content"], "avatar.png", { type: "image/png" });
+
+    // Set a file on the input
+    await userEvent.upload(fileInput, file);
+
+    // Remove photo
+    const removeBtn = screen.getByRole("button", { name: /remove photo/i });
+    await userEvent.click(removeBtn);
+
+    // File input value should be cleared to empty string
+    expect(fileInput.value).toBe("");
+
+    // Reselecting the same file works without restriction
+    await userEvent.upload(fileInput, file);
+    expect(fileInput.files?.[0]).toBe(file);
   });
 
   it("shows the summary and the per-field errors the action returns", async () => {

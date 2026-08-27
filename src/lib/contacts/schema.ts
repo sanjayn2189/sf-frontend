@@ -9,6 +9,14 @@ import type { ContactInput } from "./types";
  * and anything it rejects anyway is surfaced by `toFieldErrors` in `./api.ts`.
  */
 
+export const MAX_PHOTO_SOURCE_BYTES = 2 * 1024 * 1024; // 2 MB
+export const ALLOWED_PHOTO_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+];
+
 /** Optional text: trimmed, and blank becomes `null` (the API clears the field). */
 function optionalText(max: number, label: string) {
   return z
@@ -52,6 +60,13 @@ export const contactInputSchema = z.object({
     .transform((value) => value || null)
     .nullable()
     .default(null),
+  photo: z
+    .string()
+    .trim()
+    .max(3_000_000, "Photo must be 2MB or smaller")
+    .transform((value) => value || null)
+    .nullable()
+    .default(null),
 }) satisfies z.ZodType<ContactInput, unknown>;
 
 export type ContactFormValues = z.input<typeof contactInputSchema>;
@@ -77,7 +92,7 @@ export function zodFieldErrors(
 export interface ContactFieldSpec {
   name: keyof ContactInput;
   label: string;
-  type?: "text" | "email" | "tel" | "textarea";
+  type?: "text" | "email" | "tel" | "textarea" | "file";
   required?: boolean;
   maxLength: number;
   placeholder?: string;
@@ -97,6 +112,14 @@ export const CONTACT_FIELD_GROUPS: ContactFieldGroup[] = [
     title: "Identity",
     description: "First name, last name, and email are required.",
     fields: [
+      {
+        name: "photo",
+        label: "Photo",
+        type: "file",
+        maxLength: 3_000_000,
+        placeholder: "Upload photo",
+        wide: true,
+      },
       {
         name: "first_name",
         label: "First name",
@@ -214,14 +237,51 @@ export const CONTACT_FIELDS: ContactFieldSpec[] = CONTACT_FIELD_GROUPS.flatMap(
   (group) => group.fields,
 );
 
-/** Pull the contact fields out of a submitted form, as raw strings. */
-export function formDataToValues(
+export interface FormDataValuesResult {
+  values: Record<keyof ContactInput, string>;
+  photoError?: string;
+}
+
+/** Pull the contact fields out of a submitted form, converting direct file uploads to base64 if needed. */
+export async function formDataToValues(
   formData: FormData,
-): Record<keyof ContactInput, string> {
-  return Object.fromEntries(
-    CONTACT_FIELDS.map((field) => [
-      field.name,
-      String(formData.get(field.name) ?? ""),
-    ]),
+): Promise<FormDataValuesResult> {
+  const values = Object.fromEntries(
+    CONTACT_FIELDS.map((field) => {
+      const val = formData.get(field.name);
+      return [field.name, typeof val === "string" ? val : ""];
+    }),
   ) as Record<keyof ContactInput, string>;
+
+  let photoError: string | undefined;
+
+  // Prefer client-processed resized photo value when available.
+  // Fall back to direct binary file upload (`photo_file`) for no-JavaScript / pre-hydration submissions.
+  const photoString =
+    typeof formData.get("photo") === "string"
+      ? (formData.get("photo") as string).trim()
+      : "";
+
+  if (photoString) {
+    values.photo = photoString;
+  } else {
+    const photoFile = formData.get("photo_file");
+    if (photoFile && typeof photoFile === "object" && "arrayBuffer" in photoFile) {
+      const file = photoFile as Blob;
+      if (file.size > 0) {
+        if (file.size > MAX_PHOTO_SOURCE_BYTES) {
+          photoError = "Photo must be 2MB or smaller.";
+        } else if (file.type && !ALLOWED_PHOTO_MIME_TYPES.includes(file.type)) {
+          photoError = "Photo must be a JPG, PNG, GIF, or WebP image.";
+        } else {
+          const bytes = await file.arrayBuffer();
+          const base64 = Buffer.from(bytes).toString("base64");
+          const mimeType = file.type || "image/jpeg";
+          values.photo = `data:${mimeType};base64,${base64}`;
+        }
+      }
+    }
+  }
+
+  return { values, photoError };
 }
